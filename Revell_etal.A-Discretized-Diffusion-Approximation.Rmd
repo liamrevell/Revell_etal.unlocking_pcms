@@ -1,0 +1,1849 @@
+---
+title: "Unlocking a flexible set of phylogenetic models for discrete and continuous trait evolution using discretized stochastic diffusion"
+abstract: |
+   The practical utility of many modern phylogenetic comparative methods can depend on how accurately mathematical models capture the evolutionary process of traits. Boucher and Démery (2016) described a new quantitative trait model, Brownian motion with reflective limits, that they anticipated might be of use in testing hypotheses about a particular sort of constraint on phenotypic character evolution. Since their analytic solution for the probability function under this bounded evolutionary scenario was not practical to evaluate for reasonably-sized trees, Boucher and Démery (2016) also identified a creative technique for computing the likelihood of their model. The basis of this methodology derives from the convergence of an equal-rates, symmetric, ordered Markov chain and continuous stochastic diffusion in the limit as the number of steps in our chain goes to $\infty$ (or, alternatively, as their widths decrease towards zero). We refer to this convergence in the limit as the discretized diffusion approximation or (more compactly) the discrete approximation. We realized that this discrete approximation of Boucher and Démery (2016) unlocked a number of additional models for the phylogenetic comparative analysis of discrete and continuous trait data, and we explore several of these in the present article. Specifically, we examine application of this discretized diffusion approximation to the threshold model from evolutionary quantitative genetics, to a new "semi-threshold" trait evolution model, to a joint model of discrete and continuous traits in which the discrete trait influences the rate of evolution of our continuous character, as well as a model where precisely the converse is true, and to a discrete character dependent multi-trend trended continuous trait evolution model. We conclude with some context for the origins of our article and discussion of other possible applications of this powerful approach.
+header-includes: |
+  \usepackage{amsmath,mathtools,bm,nicematrix}
+  \renewcommand{\maketitle}{
+    \begin{center}
+    {\LARGE \bfseries Unlocking a flexible set of phylogenetic models for discrete and continuous trait evolution using discretized stochastic diffusion \par}
+    \vspace{1em}
+    {\large
+    Liam J. Revell$^{1,8}$, Laura R. V. Alencar$^{2,7}$, Michael E. Alfaro$^{3}$, Jonathan Dain$^{1}$,\\
+    Nichola J. Hill$^{1}$, Menna Jones$^{4}$, Kristen M. Martinet$^{5}$, Viviana Romero-Alarcon$^{1}$,\\
+    and Luke J. Harmon$^{6}$
+    \par}
+    \vspace{1em}
+    {\small
+    $^{1}$Department of Biology, University of Massachusetts Boston\\
+    $^{2}$Department of Ecology and Evolutionary Biology, Yale University\\
+    $^{3}$Department of Ecology and Evolutionary Biology, University of California, Los Angeles\\
+    $^{4}$Department of Geophysical Sciences, University of Chicago\\
+    $^{5}$College of Information Science, University of Arizona\\
+    $^{6}$Department of Biological Sciences, University of Idaho\\
+    $^{7}$Authors 2-8 contributed equally and are listed alphabetically by last name\\
+    $^{8}$liam.revell@umb.edu
+    \par}
+    \vspace{1em}
+    \end{center}
+  }
+bibliography: references.bib
+biblio-style: unsrt
+output:
+  bookdown::pdf_book:
+    base_format: rticles::arxiv_article
+csl: evolution.csl
+nocite: |
+  @Tyler2016
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(dev = "CairoPNG", dpi = 600)
+```
+```{r, echo=FALSE, results="hide", message=FALSE}
+library(phytools)
+library(expm)
+library(doParallel)
+library(foreach)
+```
+
+# Introduction
+
+Over a decade ago an article was published by two researchers in the journal \emph{Systematic Biology} describing a model for trait evolution that the authors referred to as "bounded Brownian motion," along with procedures to fit this model to data [@Boucher2016]. Modeling the evolutionary process as bounded might capture trait evolution on a flat adaptive landscape with hard constraints, among other possible evolutionary phenomena [@Boucher2016]. Though well-received, this article has been relatively poorly-cited. At the time of writing, for example, @Boucher2016 had been cited a total of 55 times over the decade or so since it was originally published, according to Google Scholar (and this includes a conspicuous surge of new citations that the paper has accumulated since one of us, LR, started enthusiastically blogging and speaking about its importance in 2024). A subsequent article by @Boucher2018 substantively extends @Boucher2016 by providing a much more general and flexible framework for the analysis of continuous trait evolution; however, we believe that this article, too, is underappreciated, having been cited a mere 52 times, as of the time of writing. A common feature of both articles was a creative procedure that the authors identified to compute the probability of our data under these different, novel models in phylogenetic comparative biology, where analytic functions were unavailable or impractical to evaluate for even relatively modestly sized phylogenetic trees [@Boucher2016; @Boucher2018].
+
+To best understand this procedure and its importance to the present article, we'll begin by taking a step backwards and consider the most commonly used phylogenetic model for continuous trait data: Brownian motion [@Felsenstein1973-a; @Felsenstein1985; @OMeara2006]. Brownian motion, which may also be referred to as stochastic diffusion, is a continuous time random walk model that can be fully described by two parameters: $x_0$, the starting value; and $\sigma^2$, the instantaneous diffusion rate of the process [@Felsenstein1973-a; @OMeara2006; @Revell2022-book]. When applied to a single trait dimension, evolution via Brownian motion will tend to result in an increase or decrease of the trait with equal probability, variance between diverging lineages should accumulate with a rate equal to $\sigma^2$, and the total variance after time $t$ has an expected value of $\sigma^2$ multiplied by $t$ [@OMeara2006; @Revell2022-book]. Brownian motion is a Gaussian process, meaning that the expected distribution is normal with expectation $x_0$ and variance $\sigma^2\times t$, i.e., $\sim \mathcal{N}(x_0,\sigma^2t)$ [@OMeara2006; @Revell2008; @Harmon2019-book].
+
+Figures \@ref(fig:fig1)a and \@ref(fig:fig1)b show (first) a simple phylogeny containing two terminal taxa (*T1* and *T2*) descended from a common ancestor, and (second) a single realization of unbounded Brownian motion evolution along the branches of this tree with a starting value of $x_0 = 0.0$, and a diffusion rate parameter value of $\sigma^2 = 0.8$.
+
+```{r, echo=FALSE}
+surfplot<-function(Z,x,y,...){
+  if(hasArg(xlab)) xlab<-list(...)$xlab
+  else xlab<-"x"
+  if(hasArg(ylab)) ylab<-list(...)$ylab
+  else ylab<-"y"
+  if(hasArg(cex.axis)) cex.axis<-list(...)$cex.axis
+  else cex.axis<-1
+  if(hasArg(digits)) digits<-list(...)$digits
+  else digits<-2
+  if(hasArg(title)) title<-list(...)$title
+  else title<-"log(prob)"
+  if(hasArg(cols)) cols<-list(...)$cols
+  else cols<-hcl.colors(10)
+  if(hasArg(min_z)) min_z<-list(...)$min_z
+  else min_z<-min(Z)
+  if(hasArg(max_z)) max_z<-list(...)$max_z
+  else max_z<-max(Z)
+  if(hasArg(asp)) asp<-list(...)$asp
+  else asp<-NULL
+  bp<-diff(range(x))*0.05
+  plot(NA,xlim=c(min(x),max(x)+2*bp),
+    ylim=c(min(y),max(y)+0.05*diff(range(y))),
+    bty="n",xlab=xlab,ylab=ylab,axes=FALSE,asp=asp)
+  axis(1,at=seq(min(x),max(x),length.out=5),
+    cex.axis=cex.axis)
+  axis(2,at=seq(min(y),max(y),length.out=5),
+    cex.axis=cex.axis)
+  if(length(cols)!=length(y))
+    cols<-colorRampPalette(cols)(length(y))
+  levs<-seq(min_z,max_z,length.out=length(y))
+  dx<-mean(x[2:length(x)]-x[1:(length(x)-1)])
+  dy<-mean(y[2:length(y)]-y[1:(length(y)-1)])
+  for(i in 1:length(x)) for(j in 1:length(y)){
+    COL<-cols[which.min(abs(Z[i,j]-levs))]
+    polygon(x[i]+c(-dx/2,dx/2,dx/2,-dx/2),
+      y[j]+c(-dy/2,-dy/2,dy/2,dy/2),col=COL,
+      border=FALSE)
+  }
+  for(i in 1:length(cols)){
+    polygon(max(x)+bp+c(-bp/2,bp/2,bp/2,-bp/2),
+      y[i]+c(-dy/2,-dy/2,dy/2,dy/2),col=cols[i],
+      border=FALSE)
+  }
+  polygon(max(x)+bp+c(-bp/2,bp/2,bp/2,-bp/2),
+    c(min(y)-dy/2,min(y)-dy/2,max(y)+dy/2,max(y)+dy/2))
+  axis(4,at=seq(min(y),max(y),length.out=5),
+    labels=round(seq(min_z,max_z,length.out=5),
+      digits),las=1,cex.axis=0.6,
+    pos=max(x)+1.5*bp)
+  xpd<-par()$xpd
+  par(xpd=TRUE)
+  text(x=max(x)+bp,y=max(y),title,pos=3,
+    cex=0.7)
+  par(xpd=xpd)
+}
+```
+```{r, echo=FALSE, eval=FALSE}
+set.seed(22) #7, 14
+t<-list(
+  edge=matrix(c(
+    3,4,
+    4,1,
+    4,2),3,2,byrow=TRUE),
+  edge.length=c(0.3,0.4,0.7),
+  Nnode=2,
+  tip.label=c("T2","T1"))
+class(t)<-"phylo"
+t<-paintBranches(t,edge=2,state="1",anc.state="0")
+t<-paintBranches(t,edge=1,state="2",anc.state="0")
+tt<-make.era.map(t,limits=seq(0,1,length.out=100))
+tt<-map.to.singleton(tt)
+sig2<-0.8
+x<-fastBM(tt,internal=TRUE,sig2=sig2)
+pathA<-c(2,phangorn::Ancestors(tt,2,"all"))
+pathB<-c(1,phangorn::Ancestors(tt,1,"all"))
+pathAB<-c(findMRCA(tt,c("T1","T2")),
+  phangorn::Ancestors(tt,findMRCA(tt,c("T1","T2")),"all"))
+tt<-paintBranches(tt,intersect(tt$edge[,2],pathA),"1")
+tt<-paintBranches(tt,intersect(tt$edge[,2],pathB),"2")
+tt<-paintBranches(tt,intersect(tt$edge[,2],pathAB),"0")
+C<-sig2*vcv(t)
+logL1<-matrix(NA,200,200)
+xx<-seq(-4,4,length.out=200)
+for(i in 1:nrow(logL1)) for(j in 1:ncol(logL1)){
+  logL1[j,i]<-mnormt::dmnorm(xx[c(i,j)],varcov=C,log=TRUE)
+}
+k<-21
+Q<-matrix(0,k,k)
+dimnames(Q)<-list(1:nrow(Q),1:nrow(Q))
+sig2<-0.8
+w<-diff(range(xx))
+delta<-w/(k-1)
+q<-sig2/(2*delta^2)
+for(i in 1:(nrow(Q)-1)) Q[i,i+1]<-Q[i+1,i]<-q
+diag(Q)<--rowSums(Q)
+logL2<-matrix(NA,200,200)
+levs<-seq(-4,4,length.out=nrow(Q))
+x0<-which.min(abs(levs-0))
+pi<-setNames(rep(0,nrow(Q)),rownames(Q))
+pi[x0]<-1
+for(i in 1:nrow(logL2)) for(j in 1:ncol(logL2)){
+  X<-setNames(c(
+    which.min(abs(levs-xx[i])),
+    which.min(abs(levs-xx[j]))),c("T2","T1"))
+  X<-to.matrix(X,rownames(Q))
+  logL2[j,i]<-logLik(fitMk(t,X,fixedQ=Q,pi=pi))-
+    Ntip(t)*log(delta)
+  cat(paste("[",i,",",j,"]\n"))
+}
+save(t,tt,x,logL1,xx,logL2,file="fig1.rda")
+```
+```{r fig1, echo=FALSE, fig.width=8, fig.height=6.5, fig.cap="Illustration of the discrete approximation of Boucher and D\\'emery (2016) applied to a simple two-taxon case. a) Two-taxon phylogeny containing operational taxa \\emph{T1} and \\emph{T2}. b) Realization of unbounded stochastic diffusion in one dimension (Brownian motion) with starting value $x_0 = 0.0$ and diffusion rate $\\sigma^2 = 0.8$. c) Exact probability density of the evolutionary process simulated in panel (b) with the simulated tip values, $\\mathbf{x}$, overlain, where $x_0$ and $\\sigma^2$ have been set to their generating values. d) Density function obtained by discretizing the trait space and approximating the density from the probability of the discretized data under a continuous time ordered Markov chain, that is, using the discretized diffusion approximation. As for panel (c), here $x_0$ and $\\sigma^2$ have been set to their generating values.", fig.align="center", out.width = "80%"}
+load(file="fig1.rda")
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE),heights=c(2.5,4))
+cols<-setNames(c("grey","black","white"),0:2)
+plot(t,cols,mar=c(5.1,4.1,3.1,2.1),split.vertical=TRUE,
+  lwd=3,outline=TRUE,fsize=1.2,offset=0.5,ylim=c(0.75,2.25))
+axis(1,at=seq(0,1,by=0.2),cex.axis=0.7)
+title(xlab="time")
+mtext("a)",line=1,adj=0)
+par(mar=c(5.1,4.1,3.1,2.1))
+phenogram(tt,x,colors=setNames(rep("black",3),0:2),
+  las=1,cex.axis=0.7,lwd=4,fsize=1.2)
+phenogram(tt,x,colors=cols,las=1,cex.axis=0.7,lwd=2,
+  add=TRUE,fsize=1.5)
+mtext("b)",line=1,adj=0)
+par(mar=c(4.1,4.1,2.1,2.1))
+min_lnL<-min(logL1) ## min(cbind(logL1,logL2))
+max_lnL<-max(logL1) ## max(cbind(logL1,logL2))
+cols<-c(rep("black",20),hcl.colors(n=10),"white")
+surfplot(logL1,xx,xx,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title="log(density)",cols=cols,min_z=min_lnL,
+  max_z=max_lnL)
+lines(rep(x["T1"],2),c(par()$usr[3],x["T2"]),
+  lty="dotted",col="grey40")
+lines(c(par()$usr[1],x["T1"]),rep(x["T2"],2),
+  lty="dotted",col="grey40")
+points(x=x["T1"],y=x["T2"],pch=21,cex=1.5,bg="white")
+mtext("c)",line=1,adj=0)
+surfplot(logL2,xx,xx,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title="log(density)",cols=cols,min_z=min_lnL,
+  max_z=max_lnL)
+lines(rep(x["T1"],2),c(par()$usr[3],x["T2"]),
+  lty="dotted",col="grey40")
+lines(c(par()$usr[1],x["T1"]),rep(x["T2"],2),
+  lty="dotted",col="grey40")
+points(x=x["T1"],y=x["T2"],pch=21,cex=1.5,bg="white")
+mtext("d)",line=1,adj=0)
+```
+
+When evolution occurs via Brownian motion, as shown in Figure \@ref(fig:fig1)b, the probability density of species data on a phylogenetic tree is multivariate normal with variances equal to the total height of each taxon multiplied by $\sigma^2$, and covariances between each pair of taxa, $T_{1}$ and $T_{2}$ in our simple case, equal to $\sigma^2$ times the height above the root of their common ancestor [@OMeara2006; @Revell2008; @Revell2022-book]. That is to say, $\mathbf{x} \sim \mathrm{MVN}(\mathbf{x}_0,\sigma^2\mathbf{C})$, where $\mathbf{x}$ is a vector of species values, $\mathbf{x}_0$ is a repeating vector of the root state, $x_0$, $\mathbf{C}$ is an $N \times N$ matrix containing the height above the root of the common ancestor of each pair of taxa (in the off-diagonals, and the total height of the tree to each taxon in the diagonal), and $\sigma^2$ is as defined previously [@OMeara2006; @Revell2022-book].
+
+In the example of Figure \@ref(fig:fig1)a, this gives $\sigma_{T1}^2 = 0.80$, $\sigma_{T2}^2 = 0.56$, and a covariance between species equal to the amount of common ancestry they share multiplied by $\sigma^2$, here $\sigma_{T1,T2} = 0.32$ (Figure \@ref(fig:fig1)a). To calculate the probability density of any set of observations from $N$ species given $\sigma^2$ and $x_0$, then, we merely evaluate the corresponding $N$ dimensional multivariate normal distribution at their species values of the trait, which can be done easily using a computer. This is illustrated on a natural logarithm scale in Figure \@ref(fig:fig1)c for the phylogeny and data of Figures \@ref(fig:fig1)a and \@ref(fig:fig1)b. If the values of $x_0$ and $\sigma^2$ were not known, as would typically be the case in an empirical study, this is the same probability density function that we'd use if we aimed to identify the values of $x_0$ and $\sigma^2$ that made our observed data most probable: that is, for Maximum Likelihood estimation. In that case, we'd merely evaluate the probability density at $x_{T1}$ and $x_{T2}$ for different values of $\sigma^2$ and $x_0$ until we found those that maximized the probability density of our observed data in $\mathbf{x}$ [@Lynch1998; @OMeara2006; @Revell2022-book].
+
+@Boucher2016 appreciated that because stochastic diffusion in a single trait dimension is equivalent to a continuous time, discrete state, ordered and symmetric Markov chain (also known as a symmetric nearest-neighbor Markov chain, or a continuous-time random walk on a lattice) in the limit as the number of levels in the chain goes to $\infty$ [@Donsker1951; @Billingsley1999], one should be able to compute an approximation of the probability density of a Brownian process after first discretizing the continuous trait state space into $n$ bins each of width $\delta$ [@Boucher2016; @Boucher2018]. This approximation will become exact as $n \rightarrow \infty$ (or, equivalently, as $\delta \rightarrow 0$). We refer to this model as discretized stochastic diffusion because it should behave in precisely the same way as Brownian motion in the limit as the step interval width of our trait space, $\delta$, goes towards zero. (Technically, this exact equivalence also requires that our trait space go from $-\infty$ to $\infty$ for an unbounded Brownian process, although in practice it is very nearly exactly equivalent so long as our trait space is substantially larger than the probable trait range given $x_0$, $\sigma^2$, and the total time represented by our tree.) 
+
+Although the application of this approach in @Boucher2016 was, to our knowledge, novel in phylogenetic comparative methods, the discretized diffusion approximation can also be interpreted as a finite-difference representation of the diffusion generator [or, equivalently, a discretization of the Kolmogorov equations governing the probability density, such as the Fokker-Planck equation, see @Boucher2018]. As the discretization step $\delta \rightarrow 0$, this approximation converges to the underlying continuous diffusion process, a well-established result in the theory of stochastic processes [@EthierKurtz1986; @Risken1996; @KushnerDupuis2001; @Gardiner2009; @Pavliotis2014; @Boucher2018].
+
+To exploit this convergence to calculate the probability density of our data, @Boucher2016 realized, one begins by computing the probability of the now discretized data as if they'd arisen under a continuous time, ordered, Markov chain with a rate of change between adjacent levels equal to $q_c = \sigma^2/(2\delta^2)$, where $\delta$ is (again) the bin width of our trait space discretization, and $\sigma^2$ is our stochastic diffusion (i.e., Brownian motion) rate. This construction corresponds to a classical approximation in which a diffusion process is represented by a nearest-neighbor continuous-time Markov chain on a lattice, with the approximation converging to the continuous diffusion process as $\delta \rightarrow 0$ [e.g., @EthierKurtz1986; @KushnerDupuis2001; @Pavliotis2014]. The probability of the discretized data can then be computed efficiently using the pruning algorithm of @Felsenstein1981. 
+
+The probability *density* of the data (as opposed to the *probability* of our discretization of these data) is then given by $f(\mathbf{x}) = p(\mathbf{x}')/(\delta^N)$, in which $\mathbf{x}'$ contains the discretized values of our continuous trait $x$, $p(\mathbf{x}')$ is the probability of $\mathbf{x}'$ under the Markov chain model, $N$ is the number of operational taxa in our tree, and $\delta$ is as it's been defined previously. This relationship follows from the standard connection between probabilities of histogram bins and the corresponding continuous probability density [e.g., @Silverman1986].
+
+An approximated probability density obtained using a discretization of our trait space into a mere $n = 21$ continuous character bins (far fewer than we'd employ if applying this in practice) for our example of Figure \@ref(fig:fig1) is shown in Figure \@ref(fig:fig1)d. The resemblance of this surface to the analytic equivalent in Figure \@ref(fig:fig1)c is already quite apparent, even for this purposefully "rough" discretization.
+
+```{r, echo=FALSE, eval=FALSE}
+xx<-seq(-4,4,length.out=200)
+k<-41
+Q<-matrix(0,k,k)
+dimnames(Q)<-list(1:nrow(Q),1:nrow(Q))
+w<-diff(range(xx))
+k<-nrow(Q)
+delta<-w/(k-1)
+q<-sig2/(2*delta^2)
+for(i in 1:(nrow(Q)-1)) Q[i,i+1]<-Q[i+1,i]<-q
+diag(Q)<--rowSums(Q)
+logL3<-matrix(NA,200,200)
+levs<-seq(-4,4,length.out=nrow(Q))
+x0<-which.min(abs(levs-0))
+pi<-setNames(rep(0,nrow(Q)),rownames(Q))
+pi[x0]<-1
+for(i in 1:nrow(logL2)) for(j in 1:ncol(logL2)){
+  X<-setNames(c(
+    which.min(abs(levs-xx[i])),
+    which.min(abs(levs-xx[j]))),c("T2","T1"))
+  X<-to.matrix(X,rownames(Q))
+  logL3[j,i]<-logLik(fitMk(t,X,fixedQ=Q,pi=pi))-
+    Ntip(t)*log(delta)
+  cat(paste("[",i,",",j,"]\n"))
+}
+logL3[!is.finite(logL3)]<-min(logL1)
+xx<-seq(-4,4,length.out=200)
+k<-81
+Q<-matrix(0,k,k)
+dimnames(Q)<-list(1:nrow(Q),1:nrow(Q))
+w<-diff(range(xx))
+delta<-w/(k-1)
+q<-sig2/(2*delta^2)
+for(i in 1:(nrow(Q)-1)) Q[i,i+1]<-Q[i+1,i]<-q
+diag(Q)<--rowSums(Q)
+logL4<-matrix(NA,200,200)
+levs<-seq(-4,4,length.out=nrow(Q))
+x0<-which.min(abs(levs-0))
+pi<-setNames(rep(0,nrow(Q)),rownames(Q))
+pi[x0]<-1
+for(i in 1:nrow(logL2)) for(j in 1:ncol(logL2)){
+  X<-setNames(c(
+    which.min(abs(levs-xx[i])),
+    which.min(abs(levs-xx[j]))),c("T2","T1"))
+  X<-to.matrix(X,rownames(Q))
+  logL4[j,i]<-logLik(fitMk(t,X,fixedQ=Q,pi=pi))-
+    Ntip(t)*log(w/k)
+  cat(paste("[",i,",",j,"]\n"))
+}
+logL4[!is.finite(logL4)]<-min(logL1)
+save(t,tt,x,logL1,xx,logL2,logL3,logL4,file="fig2.rda")
+```
+```{r fig2, echo=FALSE, fig.width=8, fig.height=8, fig.cap="a) Density function obtained for the tree and generating stochastic process of Figure 1 using the discretized diffusion approximation with 41 levels, under the generating parameters of the process ($x_0 = 0.0$ and $\\sigma^2 = 0.8$). b) Difference between the true (i.e., analytic) probability density of Figure 1c and the estimate obtained via the discretized diffusion approximation in panel (a). c) The same as (a), but with about twice as many bins. The increasing resemblance to Figure 1c is apparent. d) Difference between the true and estimated density for panel (c).", fig.align="center", out.width = "80%"}
+load("fig2.rda")
+layout(mat=matrix(c(1,3,2,4),2,2,byrow=TRUE),heights=c(0.5,0.5))
+par(mar=c(4.1,4.1,2.1,2.1))
+min_lnL<-min(cbind(logL1,logL2,logL3))
+max_lnL<-max(cbind(logL1,logL2,logL3))
+cols<-c(rep("black",20),hcl.colors(n=10),"white")
+surfplot(logL3,xx,xx,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title="log(density)",cols=cols,min_z=min_lnL,
+  max_z=max_lnL)
+lines(rep(x["T1"],2),c(par()$usr[3],x["T2"]),
+  lty="dotted",col="grey40")
+lines(c(par()$usr[1],x["T1"]),rep(x["T2"],2),
+  lty="dotted",col="grey40")
+points(x=x["T1"],y=x["T2"],pch=21,cex=1.5,bg="white")
+mtext("a)",line=1,adj=0)
+surfplot(logL4,xx,xx,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title="log(density)",cols=cols,min_z=min_lnL,
+  max_z=max_lnL)
+lines(rep(x["T1"],2),c(par()$usr[3],x["T2"]),
+  lty="dotted",col="grey40")
+lines(c(par()$usr[1],x["T1"]),rep(x["T2"],2),
+  lty="dotted",col="grey40")
+points(x=x["T1"],y=x["T2"],pch=21,cex=1.5,bg="white")
+mtext("c)",line=1,adj=0)
+cols<-colorRampPalette(c("lightcoral","white","lightblue"))(30)
+cols<-colorRampPalette(c("darkred","white","darkblue"))(30)
+min_dL<-min(c(exp(logL1)-exp(logL3),exp(logL1)-exp(logL4)))
+max_dL<-max(c(exp(logL1)-exp(logL3),exp(logL1)-exp(logL4)))
+min_dL<-min(min_dL,-max_dL)
+max_dL<-max(-min_dL,max_dL)
+surfplot(exp(logL1)-exp(logL3),xx,xx,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title=expression(paste(Delta," density")),
+  cols=cols,min_z=min_dL,max_z=max_dL)
+mtext("b)",line=1,adj=0)
+surfplot(exp(logL1)-exp(logL4),xx,xx,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title=expression(paste(Delta," density")),
+  cols=cols,min_z=min_dL,max_z=max_dL)
+mtext("d)",line=1,adj=0)
+```
+
+Figures \@ref(fig:fig2)a and \@ref(fig:fig2)c show the equivalent discretely approximated probability density function as Figure \@ref(fig:fig1)d, but where the number of levels of the discretization has been roughly doubled (to 41, and $\delta$ thus halved from its previous level) in panel \@ref(fig:fig2)a and doubled again (to 81) in panel \@ref(fig:fig2)c. Figures \@ref(fig:fig2)b and \@ref(fig:fig2)d give the difference from the analytic density of Figure \@ref(fig:fig1)c ($\Delta$ density) for each of the two preceding panels. Unsurprisingly, the accuracy of our approximation (i.e., its resemblance to Figure \@ref(fig:fig1)c) concomitantly improves as the number of bins is increased (in other words, as $\delta$ is decreased towards zero).
+
+What we've illustrated here is simply that the probability density of Brownian motion on a tree can be approximated by discretizing the trait space, computing the probability of our now discrete continuous character data under a scenario of discretized stochastic diffusion, and then applying the appropriate back-transformation (from probability to density function), as previously documented [@Boucher2016; @Boucher2018]. At this point we think it could be useful to highlight a common misconception about our approach. Frequently, colleagues misunderstand the preceding explanation of the discretized diffusion approximation as implying that we've proposed to transform a continuous problem into a discontinuous one: akin to recategorizing continuously varying lizards into "small," "medium," and "large," and then proceeding to analyze these "new" data using machinery suitable for a discrete trait. This is wrong. What we're describing instead is that it's possible to exploit the precise equivalence (in the limit as $\delta \rightarrow 0$) of Brownian motion and an ordered, symmetric, continuous time Markov chain to calculate an estimate of the probability density of our original, untransformed, continuous trait model -- using an approximation that, once again, becomes exact in the limit as $\delta$, the interval width of our discretization of continuous trait space, shrinks towards zero.
+
+This would be no more than an interesting curiosity (for those of us who work in phylogenetic comparative methods) if it could only be applied to trait evolution models, like unbounded Brownian motion, for which an analytic solution for the probability density is known and numerically tractable. To appreciate the proper utility of the @Boucher2016 approximation, therefore, we must identify and apply it to evolutionary scenarios where an analytic function giving the relationship between data and the probability density is unavailable or impractical to use, but for which a discretized diffusion approximation can be constructed [@Boucher2018].
+
+Before we continue to consider the various such scenarios listed in the Abstract of this article, we'll commence with the canonical case of bounded stochastic diffusion: i.e., Brownian motion with reflective boundary conditions [@Boucher2016]. Here, there's no convenient analytic density [because the analytic solution of @Boucher2016 scales poorly to reasonably-sized phylogenies], and the underlying process is non-Gaussian due to the boundaries of trait space. This means that an analytic density, if it could be evaluated, would not be multivariate normal. Nonetheless, this scenario poses no difficulty at all to our approximation because it's straightforward to compute the probability of data that arose via an ordered Markov chain with reflecting limits, and this is all that's required to evaluate the likelihood using our discretized diffusion approximation [@KarlinTaylor1981; @Risken1996; @Boucher2016]. In practice, this is done merely by removing outward transitions at the bounds of the trait space. The missing outward rate can either be reassigned to the inward transition, resulting in a boundary rate of $2q_c = \sigma^2/\delta^2$, or simply omitted, leaving the inward rate equal to $q_c = \sigma^2/(2\delta^2)$ in the boundary rows. The former is more technically accurate for a finite number of bins of discretization, $n$, but the latter is computationally simpler and converges on the former as $\delta \to 0$.
+
+```{r echo=FALSE, eval=FALSE}
+t<-list(
+  edge=matrix(c(
+    3,4,
+    4,1,
+    4,2),3,2,byrow=TRUE),
+  edge.length=c(0.3,0.4,0.7),
+  Nnode=2,
+  tip.label=c("T2","T1"))
+class(t)<-"phylo"
+t<-paintBranches(t,edge=2,state="1",anc.state="0")
+t<-paintBranches(t,edge=1,state="2",anc.state="0")
+tt<-make.era.map(t,limits=seq(0,1,length.out=100))
+tt<-map.to.singleton(tt)
+pathA<-c(2,phangorn::Ancestors(tt,2,"all"))
+pathB<-c(1,phangorn::Ancestors(tt,1,"all"))
+pathAB<-c(findMRCA(tt,c("T1","T2")),
+  phangorn::Ancestors(tt,findMRCA(tt,c("T1","T2")),"all"))
+tt<-paintBranches(tt,intersect(tt$edge[,2],pathA),"1")
+tt<-paintBranches(tt,intersect(tt$edge[,2],pathB),"2")
+tt<-paintBranches(tt,intersect(tt$edge[,2],pathAB),"0")
+set.seed(30)
+bounds<-c(-2,2)
+sig2<-3.0
+y<-fastBM(tt,internal=TRUE,bounds=bounds,sig2=sig2)
+xx<-seq(-2,2,length.out=100)
+Q<-matrix(0,101,101)
+dimnames(Q)<-list(1:nrow(Q),1:nrow(Q))
+w<-diff(range(xx))
+k<-nrow(Q)
+q<-(sig2/2)/((w/k)^2)
+for(i in 1:(nrow(Q)-1)) Q[i,i+1]<-Q[i+1,i]<-q
+diag(Q)<--rowSums(Q)
+logL3<-matrix(NA,100,100)
+levs<-seq(-2,2,length.out=nrow(Q))
+x0<-which.min(abs(levs-0))
+pi<-setNames(rep(0,nrow(Q)),rownames(Q))
+pi[x0]<-1
+for(i in 1:nrow(logL3)) for(j in 1:ncol(logL3)){
+  X<-setNames(c(
+    which.min(abs(levs-xx[i])),
+    which.min(abs(levs-xx[j]))),c("T2","T1"))
+  X<-to.matrix(X,rownames(Q))
+  logL3[j,i]<-logLik(fitMk(t,X,fixedQ=Q,pi=pi))-
+    Ntip(t)*log(w/k)
+  cat(paste("[",i,",",j,"]\n"))
+}
+save(t,tt,y,xx,logL3,file="fig3.rda")
+```
+```{r fig3, echo=FALSE, fig.width=8, fig.height=4, fig.cap="Demonstration of the application of the discretized diffusion approximation to a case (bounded Brownian motion) for which an analytic probability density is not readily available. a) Realization of Brownian motion evolution with reflective bounds on the phylogenetic tree of Figure 1a. Reflecting boundaries are shown by the red bars at the top and bottom of the phenotype space, $[-2, 2]$. b) Probability density function estimated using the discretized diffusion approximation under the generating parameter values of figure panel (a).", fig.align="center", out.width = "80%"}
+load("fig3.rda")
+layout(mat=matrix(c(1,3,2,2),2,2),heights=c(3,1))
+par(mar=c(4.1,4.1,2.1,2.1))
+phenogram(tt,y,colors=setNames(rep("black",3),0:2),
+  cex.axis=0.7,lwd=4,fsize=1.2,ylim=c(-2,2+0.05*4),
+  xlim=c(0,1.2))
+polygon(c(0,1,1,0),c(1.96,1.96,2.04,2.04),
+  col=make.transparent("red",0.25),border=FALSE)
+polygon(c(0,1,1,0),-c(1.96,1.96,2.04,2.04),
+  col=make.transparent("red",0.25),border=FALSE)
+cols<-setNames(c("grey","black","white"),0:2)
+phenogram(tt,y,colors=cols,cex.axis=0.7,lwd=2,
+  add=TRUE)
+mtext("a)",line=1,adj=0)
+par(mar=c(4.1,4.1,2.1,2.1))
+cols<-c(rep("black",10),hcl.colors(n=10),"white")
+surfplot(logL3,xx,xx,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title="log(density)",cols=cols)
+lines(rep(y["T1"],2),c(par()$usr[3],y["T2"]),
+  lty="dotted",col="grey40")
+lines(c(par()$usr[1],y["T1"]),rep(y["T2"],2),
+  lty="dotted",col="grey40")
+points(x=y["T1"],y=y["T2"],pch=21,cex=1.5,bg="white")
+mtext("b)",line=1,adj=0)
+```
+
+Figure \@ref(fig:fig3)a gives a single realization of bounded Brownian evolution for $\sigma^2 = 3.0$, $x_0 = 0$, and bounds $[-2, 2]$ on the same tree as was shown in Figure \@ref(fig:fig1)a. Figure \@ref(fig:fig3)b shows the probability density under a bounded Brownian process, given the generating parameter values of our process, and obtained using 101 bins of discretization. It's easy to appreciate from the figure that this density is not bivariate normal, as we saw in Figures \@ref(fig:fig1) and \@ref(fig:fig2), but saddle-shaped (Figure \@ref(fig:fig3)b). Just as before, under the more typical conditions where the generating parameters of the stochastic process were unknown, we would just evaluate the density function at $x_{T1}$ and $x_{T2}$ for different values of $\sigma^2$, $x_0$, and bounds until we found those values that made our observed data most probable. These would be our Maximum Likelihood estimates [@Boucher2016]. [Note that, in practice, @Boucher2016 have shown the uppermost and lowermost observed values in $\textbf{x}$ tend to fully determine the MLE bounds in this model: i.e., the MLE estimate of the bounds will be the observed trait range, unless otherwise specified.]
+
+To demonstrate that our discretized diffusion approximation has provided us with an accurate probability density, we undertook 2,000,000 simulations of bounded Brownian evolution on the two-taxon phylogeny of Figure \@ref(fig:fig1)a using the same conditions as were used to obtain the data of Figure \@ref(fig:fig3)a: i.e., $\sigma^2 = 3$, $x_0 = 0$, and reflecting bounds at $[-2, 2]$. We then plotted the raw simulation results using semi-transparent colors (in Figure \@ref(fig:fig4)a) and computed a two-dimensional kernel density, which we graphed on a natural logarithm scale (Figure \@ref(fig:fig4)b). The similarity of this kernel density and our probability density function estimated using the discretized diffusion approximation in Figure \@ref(fig:fig3)b is striking.
+
+It might be worth noting that, following @Boucher2016, the characteristic time for a bounded Brownian process (typical time for our trait's evolution to traverse the interval between our lower and upper bounds) is approximately $\tau = (b-a)^2/\sigma^2$, for lower and upper bounds $a$ and $b$, respectively. Relatedly, the relaxation time (time after which the probability density a single evolving lineage would be diffuse on the whole interval) is expected to be $2(b-a)^2/(\pi\sigma^2)$, where $a$, $b$, and $\sigma^2$ are as previously defined. In the two taxon case of Figures \@ref(fig:fig1)a and \@ref(fig:fig3)b, this means that if the time separating taxa *T1* and *T2* exceeds $2(b-a)^2/(\pi\sigma^2)$ for given $a$, $b$, and $\sigma^2$ ($-2$, $2$, and $3.0$, for the simulation of Figure \@ref(fig:fig3)b) then the probability density would become flat on the interval of the bounds: any set of "in-bounds" observations for $\textbf{x}$ become equiprobable.
+
+```{r, eval=FALSE, echo=FALSE}
+X<-fastBM(t,sig2=3,bounds=c(-2,2),nsim=2000000)
+dens<-MASS::kde2d(X[2,],X[1,],h=0.25,n=100)
+save(X,dens,file="fig4.rda")
+```
+```{r fig4, echo=FALSE, fig.width=8, fig.height=4, fig.cap="a) Data for 2,000,000 bounded Brownian motion simulations on the phylogeny of Figure 1 using the simulation conditions of Figure 3a. b) Two dimensional kernel density visualization of the data of panel (a). Note the resemblance of this kernel density to the probability density surface obtained via the discretized diffusion approximation and illustrated in Figure 3b.", fig.align="center", out.width = "80%"}
+load("fig4.rda")
+Z<-log(dens$z)
+Z[Z<min(logL3)]<-min(logL3)
+cols<-c(rep("black",10),hcl.colors(n=10),"white")
+layout(mat=matrix(c(3,3,1,2),2,2,byrow=TRUE),heights=c(0,4))
+par(mar=c(4.1,4.1,2.1,2.1),las=1)
+col<-make.transparent(hcl.colors(n=1),0.02)
+plot(t(X),pch=16,col=col,xlim=c(-2,2.2),ylim=c(-2,2.2),las=1,
+  bty="n",axes=FALSE,xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex=0.2)
+axis(1,at=seq(-2,2,by=1),cex.axis=0.7)
+axis(2,at=seq(-2,2,by=1),cex.axis=0.7)
+mtext("a)",line=1,adj=0)
+surfplot(Z,round(dens$x,4),round(dens$y,4),xlab=expression(x[T1]),
+  ylab=expression(x[T2]),cex.axis=0.7,digits=2,
+  title="log(density)",cols=cols)
+mtext("b)",line=1,adj=0)
+```
+
+Finally, to illustrate that the discretized diffusion approximation is also useful in estimation (that is, in fitting this model to data), we undertook a very small simulation analysis. We began by simulating one hundred 200-taxon stochastic pure-birth phylogenetic trees. We then randomly sampled generating values of $\log(\sigma^2)$ for bounded Brownian evolution from a normal distribution with mean of zero and variance of one, and simulated continuous trait data for each tree using reflecting bounds of $[-1, 1]$. Then we proceeded to fit both standard (unbounded) Brownian motion, using a standard analytic function for the likelihood, and @Boucher2016's bounded model using the discretized diffusion approximation, using the discretized diffusion approximation exactly as described above. Figure \@ref(fig:fig5) shows parameter estimation for $\sigma^2$ and $x_0$ for each of these analyses. [For a more comprehensive set of simulations and analyses under this model, we refer the reader to @Boucher2016.]
+
+```{r, eval=FALSE, echo=FALSE}
+set.seed(99)
+nsim<-100
+results<-matrix(NA,nsim,7,dimnames=list(1:nsim,c("true_sig2",
+  "true_x0","sig2","x0","logL","bm_sig2","bm_x0")))
+sig2<-exp(rnorm(n=nsim))
+x0<-runif(n=nsim,-1,1)
+for(i in 1:nsim){
+  ## simulate
+  tree<-pbtree(n=200,scale=1)
+  x<-fastBM(tree,sig2=sig2[i],a=x0[i],
+    bounds=c(-1,1))
+  ## fit using phytools::bounded_bm
+  bounded.fit<-bounded_bm(tree,x,lims=c(-1,1),
+    root="mle",lik.func="eigen",parallel=TRUE,levs=200)
+  ## fit standard BM
+  bm.fit<-geiger::fitContinuous(tree,x)
+  ## store result
+  results[i,]<-c(sig2[i],x0[i],bounded.fit$sigsq,
+    bounded.fit$x0,logLik(bounded.fit),
+    bm.fit$opt$sigsq,bm.fit$opt$z0)
+  ## cat(paste("Done iteration",i,"...\n"))
+}
+save(results,file="fig5.rda")
+```
+```{r fig5, echo=FALSE, fig.width=9, fig.height=7.5, fig.cap="Statistical behavior of Boucher and D\\'emery's (2016) bounded Brownian motion model, fit using the discretized diffusion approximation. The point color gradient corresponds to the generating stochastic diffusion rate, $\\sigma^2$, with higher values of $\\sigma^2$ shown by lighter colors, as illustrated in the right figure legend.  a) Generating vs. estimated $\\sigma^2$ obtained by fitting a bounded model following Boucher and D\\'emery (2016). b) Generating vs. estimated $x_0$ from the same bounded model as in panel (a). c) Generating vs. estimated $\\sigma^2$ when standard (unbounded) Brownian evolution was assumed. d) Generating vs. estimated $x_0$ under unbounded Brownian motion. Bounded Brownian motion parameter estimates were obtained using the \\textit{phytools} R package (Revell 2024), while unbounded estimates come from the \\textit{geiger} package (Pennell et al. 2014). See main text for more details. ", fig.align="center", out.width = "90%"}
+load("fig5.rda")
+par(mar=c(5.1,4.1,3.1,1.1))
+cols<-hcl.colors(n=100)
+ii<-order(results[,"true_sig2"])
+results<-results[ii,]
+ln_sig2<-log(results[,"true_sig2"])
+cols<-cols[round((ln_sig2-min(ln_sig2))/diff(range(ln_sig2))*99)+1]
+layout(mat=matrix(c(1,2,5,3,4,5),2,3,byrow=TRUE),heights=c(3.5,3.5),
+  widths=c(3.5,3.5,0.75))
+xylim.sig2<-c(min(c(
+  results[,"true_sig2"],
+  results[,"sig2"],
+  results[,"bm_sig2"])),
+  max(c(
+    results[,"true_sig2"],
+    results[,"sig2"],
+    results[,"bm_sig2"])))
+plot(NA,xlab=expression(paste("generating ",sigma^2)),
+  ylab=expression(paste("estimated ",sigma^2," (bounded_bm)")),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.sig2,ylim=xylim.sig2,
+  log="xy")
+mtext("a)",line=1,adj=0)
+grid()
+points(results[,"true_sig2"],results[,"sig2"],
+  pch=16,col=cols,las=1,,cex=1.6)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.sig2,xylim.sig2)
+plot(NA,xlab=expression(paste("generating ",x[0])),
+  ylab=expression(paste("estimated ",x[0]," (bounded_bm)")),
+  bty="n",las=1,cex.axis=0.8,xlim=c(-1,1),ylim=c(-1,1))
+mtext("b)",line=1,adj=0)
+grid()
+points(results[,"true_x0"],results[,"x0"],pch=16,col=cols,cex=1.6)
+lines(c(-1,1),c(-1,1))
+plot(NA,xlab=expression(paste("generating ",sigma^2)),
+  ylab=expression(paste("estimated ",sigma^2," (fitContinuous)")),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.sig2,ylim=xylim.sig2,log="xy")
+mtext("c)",line=1,adj=0)
+grid()
+points(results[,"true_sig2"],results[,"bm_sig2"],pch=16,col=cols,
+  cex=1.6)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.sig2,xylim.sig2)
+plot(NA,xlab=expression(paste("generating ",x[0])),
+  ylab=expression(paste("estimated ",x[0]," (fitContinuous)")),
+  bty="n",las=1,cex.axis=0.8,xlim=c(-1,1),ylim=c(-1,1))
+mtext("d)",line=1,adj=0)
+grid()
+points(results[,"true_x0"],results[,"bm_x0"],pch=16,col=cols,
+  cex=1.6)
+lines(c(-1,1),c(-1,1))
+par(mar=c(0,0,0,0))
+plot(NA,xlim=c(-1,1),ylim=c(-1,1),axes=FALSE,bty="n")
+labels<-c(0.05,0.5,5)
+at<--0.5+(log(labels)-min(ln_sig2))/(max(ln_sig2)-min(ln_sig2))
+axis(2,at=at,labels=labels,pos=0.25,las=1,
+  cex.axis=0.7)
+segments(x0=0.25,y0=-0.5,x1=0.25,y1=0.5,lend=1)
+segments(x0=rep(0.5,100),x1=rep(0.5,100),
+  y0=seq(-0.5,0.49,by=0.01),y1=seq(-0.49,0.5,by=0.01),
+  col=hcl.colors(n=100),lwd=8,lend=1)
+text(x=-0.8,y=0,expression(paste("generating ",sigma^2)),srt=90)
+```
+
+In general, we found that when trait data were simulated under bounded Brownian motion, ignoring the bounds in model-fitting resulted in systematic underestimation of $\sigma^2$, particularly for larger values of the rate parameter (Figure \@ref(fig:fig5)c) -- a bias that disappears when we instead fit @Boucher2016's model using the discretized diffusion approximation (Figure \@ref(fig:fig5)a). Both bounded and unbounded Brownian motion resulted in reliable estimation of the root state, $x_0$, for low values of $\sigma^2$ (dark colored points in Figures \@ref(fig:fig5)b and \@ref(fig:fig5)d); however, estimates tended towards the upper or lower bound when the bounded model was used for estimation, and towards the midpoint of the bounds (i.e., zero for the evolutionary scenario of our simulations) when unbounded Brownian evolution was assumed (light colored points in Figures \@ref(fig:fig5)b and \@ref(fig:fig5)d). Nonetheless, other work has shown that confidence intervals for the bounded model are correct and estimation error tends to be quite a bit smaller when the data arose via a bounded process [@Revell2025b].
+
+Now that we believe we've re-established that the discretized diffusion approximation estimation procedure of @Boucher2016 is useful for the bounded case, we'll proceed to consider a small number of other applications, as described in the Abstract.
+
+# Applications
+
+## The threshold model
+
+The threshold model gives a scenario in evolutionary quantitative genetics positing that although our trait may be observed only in discrete conditions (e.g., 0 or 1; white, red, or blue; present or absent; etc.), its expressed value is based on some underlying, unobserved continuous character called liability [@Wright1934; @Felsenstein2005; @Felsenstein2012; @Revell2014b; @Revell2022-book]. Every time this unobserved trait liability crosses a fixed threshold value, the observed discrete character changes in state. The threshold model was originally described to characterize the genetic basis for variation in digit number in guinea pigs (and other discrete traits with a similar hypothesized genetic basis) by @Wright1934, but was later introduced to phylogenetic comparative analysis by @Felsenstein2005. A threshold evolutionary process might be expected for discrete characters whose underlying basis is determined by a potentially observable, but unmeasured, quantitative characteristic, like the level of a circulating blood hormone that triggers a binary developmental switch; but the threshold model could also capture the evolutionary dynamics of complex ecological characteristics, such as preferred habitat, that manifest or are measured discretely, but are actually underlain by many continuous and discretely-valued phenotypic attributes [@Revell2014b; @Revell2022-book].
+
+```{r, eval=FALSE, echo=FALSE}
+## create "phylo" object
+set.seed(17)
+t<-list(
+  edge=matrix(c(
+    4,5,
+    5,6,
+    6,3,
+    6,2,
+    5,1),5,2,byrow=TRUE),
+  edge.length=c(0.4,0.4,0.2,0.2,0.6),
+  Nnode=3,
+  tip.label=c("T3","T2","T1"))
+class(t)<-"phylo"
+## add nodes
+tt<-make.era.map(t,limits=seq(0,1,length.out=100))
+tt<-map.to.singleton(tt)
+## simulate with internal states
+z<-fastBM(tt,a=0.5,internal=TRUE)
+## make "simmap" object
+ss<-tt
+ss$maps<-list()
+for(i in 1:nrow(ss$edge)){
+  if(all(z[ss$edge[i,]]<0)){ 
+    ss$maps[[i]]<-setNames(ss$edge.length[i],"a")
+  } else if(all(z[ss$edge[i,]]>=0)){ 
+    ss$maps[[i]]<-setNames(ss$edge.length[i],"b")
+  } else {
+    if(z[ss$edge[i,2]]<0){
+      ss$maps[[i]]<-setNames(abs(z[ss$edge[i,]])/
+          sum(abs(z[ss$edge[i,]])),c("b","a"))*ss$edge.length[i]
+    } else {
+      ss$maps[[i]]<-setNames(abs(z[ss$edge[i,]])/
+          sum(abs(z[ss$edge[i,]])),c("a","b"))*ss$edge.length[i]
+    }
+  }
+}
+class(ss)<-c("simmap","phylo")
+## VCV structure on original "phylo" object
+V<-vcv(t)
+## "exact" probability
+prob <- mvtnorm::pmvnorm(
+  lower =c(-Inf,0,0), 
+  upper = c(0,Inf,Inf), 
+  mean = 0.5, 
+  sigma = V)
+## prep for discrete approximation
+x<-setNames(c("b","b","a"),c("T1","T2","T3"))
+pw<-reorder(t,"pruningwise")
+X<-to.matrix(x,c("a","b"))[pw$tip.label,]
+## discrete approximation for different no. of bins
+k<-c(5,10,20,40,80,160,320,640)
+prob_disc<-vector()
+for(i in 1:length(k)){
+  MODEL<-matrix(0,k[i],k[i])
+  for(j in 2:k[i]) MODEL[j-1,j]<-MODEL[j,j-1]<-1
+  xx<-seq(-3,3,length.out=k[i])
+  ## Y<-phytools:::thresh2bin(xx,c(-Inf,0,Inf),X)
+  d<-diff(range(xx))/k[i]
+  q<-1/(2*d^2)
+  Q<-q*MODEL
+  diag(Q)<--rowSums(Q)
+  P<-lapply(pw$edge.length,function(e,Q) expm::expm(e*Q),
+    Q=Q)
+  ROOT<-rep(0,k[i])
+  ROOT[which.min(abs(xx-0.5))]<-1
+  prob_disc[i]<-exp(phytools:::lik_thresh(c(),pw,0,xx,X,P,
+    pi=ROOT,trace=0))
+}
+save(tt,z,ss,prob_disc,k,prob,file="fig6.rda")
+```
+```{r fig6, echo=FALSE, fig.width=8, fig.height=6.5, fig.cap="Estimation under the threshold model from evolutionary quantitative genetics. a) Evolution of the trait liability via Brownian motion. When liability crosses the ``threshold'' value of 0 (in this example), the discrete character changes in state. b) Corresponding discrete character phylogenetic history for the liabilities of panel (a). c) Comparison of ``exact'' probability of the discrete character data at the tips of the tree in panel (b) to the discrete approximation for various numbers of bins. See main text for more details.", fig.align="center", out.width = "80%"}
+load("fig6.rda")
+## plot
+layout(mat=matrix(c(1,2,3,3),2,2,byrow=TRUE),heights=c(3.25,3.25))
+par(mar=c(5.1,4.1,3.1,1.1))
+cols<-setNames(hcl.colors(n=2),c("a","b"))
+phenogram(tt,z,spread.labels=FALSE,lwd=5,las=1,cex.axis=0.8,
+  ylab="liability")
+phenogram(ss,z,spread.labels=FALSE,lwd=3,add=TRUE,colors=cols)
+text(0.18,0.05,"threshold",pos=1,cex=0.8)
+lines(c(0,1),rep(0,2),lty="dotted",col="blue")
+## abline(h=0,lty="dotted",col="blue")
+mtext("a)",adj=0,line=1)
+plotTree(tt,tips=setNames(3:1,ss$tip.label),mar=c(5.1,4.1,3.1,1.1),
+  lwd=5,ylim=c(0.5,3.5))
+plot(ss,tips=setNames(3:1,ss$tip.label),mar=c(5.1,4.1,3.1,1.1),
+  colors=cols,lwd=3,ylim=c(0.5,3.5),add=TRUE,ftype="off",
+  xlim=get("last_plot.phylo",envir=.PlotPhyloEnv)$x.lim)
+axis(1,cex.axis=0.8)
+title(xlab="time")
+mtext("b)",adj=0,line=1)
+plot(prob_disc,type="b",pch=16,bty="n",axes=FALSE,cex=1.5,xlab="number of bins",
+  ylab="probability")
+abline(h=prob,lty="dotted",col="blue")
+axis(1,at=1:length(k),labels=k,cex.axis=0.8)
+axis(2,cex.axis=0.8,las=1)
+legend("topright",c("\"exact\" probability","discrete approximation"),
+  lty=c("dotted","solid"),pch=c(NA,16),pt.cex=c(NA,1.5),bty="n",
+  cex=0.8,col=c("blue","black"))
+mtext("c)",adj=0,line=1)
+```
+
+An illustration of evolution under the threshold model is given for a simple three-taxon tree in Figure \@ref(fig:fig6). Figure \@ref(fig:fig6)a shows the (normally unobserved) evolutionary trajectory of liability, whereas Figure \@ref(fig:fig6)b shows the resultant discrete character history of our observed trait.
+
+Computing the probability of data that arise under a threshold model on the phylogeny requires that we calculate the integral of an $N$ dimensional multivariate normal distribution (for $N$ terminal taxa in our tree), which can be done efficiently using numerical methods for only relatively low $N$ [e.g., @Genz1992; @Genz2004]. More efficient algorithms for computing higher dimensional multivariate normal integrals have been developed, but they still remain computationally impractical for trees containing the larger number of operational taxa that typify many modern phylogenetic comparative studies [@Felsenstein2005; @GenzBretz2009; @Felsenstein2012; @Revell2014b].
+
+In the original article describing application of the threshold model to phylogenetic comparative biology Felsenstein remarked that to compute the probability of the observed (discrete data) we must approximate "a high-dimensional integral for which no closed-form formula exists.... [t]he integral is approximated by Monte Carlo integration -- drawing a large sample of points from the domain of integration and evaluating the contribution to the integral in the vicinity of these points by evaluating the function at the points.... we replace the continuous function that is being integrated by a histogram that approximates it" [@Felsenstein2005]. @Felsenstein2005 proceeds on to describe how this can be done efficiently using Markov chain Monte Carlo with Gibbs sampling [@McCulloch1994; @Felsenstein2005]. 
+
+Based on @Boucher2016, it occurred to us that this integral could also be approximated in a different way –- by replacing our underlying continuous stochastic process for liability with a discretized diffusion approximation that converges on the continuous one as our step size shrinks, $\delta \rightarrow 0$, just as we've described above. In Figure \@ref(fig:fig6)c the equivalence of our "exact" solution (obtained using numerical integration for the very small $N = 3$ tree of Figure \@ref(fig:fig6)b) and the discrete approximation in the limit as the bin number is increased (and thus their widths, $\delta$, are decreased towards zero) is readily apparent.
+
+```{r, echo=FALSE, eval=FALSE}
+## load phytools
+library(phytools)
+
+## set seed
+set.seed(99)
+
+## our threshold function
+thresh<-function(liability){
+  foo<-function(x) if(x<0) "a" else 
+    if(x>0&&x<0.8) "b" else 
+      if(x>0.8&&x<2) "c" else "d"
+  sapply(liability,foo)
+}
+## simulated trees
+trees<-pbtree(n=200,nsim=100,scale=3)
+## simulated liabilities
+anc<-runif(n=length(trees),min=-1,max=3)
+liabilities<-mapply(fastBM,tree=trees,a=anc,
+  SIMPLIFY=FALSE)
+## threshold traits
+x1<-lapply(liabilities,thresh)
+x1<-lapply(x1,to.matrix,c("a","b","c","d"))
+
+
+## load packages
+library(foreach)
+library(doParallel)
+## set up cluster
+ncores<-min(length(trees),detectCores()-1)
+mc<-makeCluster(ncores,type="PSOCK")
+registerDoParallel(cl=mc)
+## run optimizations
+thresh_fits<-foreach(i=1:length(trees))%dopar%{
+  phytools::fitThresh(trees[[i]],x1[[i]])
+}
+
+## fit symmetric Mk model
+sym_model<-matrix(c(
+  0,1,0,0,
+  1,0,2,0,
+  0,2,0,3,
+  0,0,3,0),4,4)
+sym_fits<-foreach(i=1:length(trees))%dopar%{
+  phytools::fitMk(trees[[i]],x1[[i]],
+    model=sym_model,pi="fitzjohn")
+}
+
+## fit asymmetric Mk model
+asym_model<-matrix(c(
+  0,1,0,0,
+  2,0,3,0,
+  0,4,0,5,
+  0,0,6,0),4,4)
+asym_fits<-foreach(i=1:length(trees))%dopar%{
+  phytools::fitMk(trees[[i]],x1[[i]],
+    model=asym_model,pi="fitzjohn")
+}
+
+## model comparison
+invisible(capture.output(
+  aov_thresh<-mapply(anova,thresh_fits,sym_fits,asym_fits,
+    SIMPLIFY=FALSE)))
+thresh_w<-t(sapply(aov_thresh,
+  function(x) x$weight))
+colnames(thresh_w)<-c("threshold","Mk(sym)",
+  "Mk(asym)")
+round(thresh_w,4)
+
+## estimated thresholds
+est_thresholds<-t(sapply(thresh_fits,function(x) 
+  setNames(x$threshold,c("a<->b","b<->c","c<->d"))-
+    min(x$threshold)))
+est_thresholds
+
+## stop cluster
+stopCluster(cl=mc)
+
+save.image(file="fig7.rda")
+```
+```{r fig7, echo=FALSE, fig.width=8, fig.height=6.5, fig.cap="Results for model selection and parameter estimation for the multi-state threshold model using the discretized diffusion approximation for model-fitting. a) Akaike model weights for the threshold model and two variants of the M\\textit{k} model: an ordered symmetric model; and an ordered asymmetric model (the two flavors of M\\textit{k} model we thought most-closely resembled an ordered threshold process). Simulation model fits have been sorted by the model weight favoring the threshold model, which was the generating model for all simulations. b) Distribution across simulations of the estimated position of the threshold between character levels \\textit{b} and \\textit{c}, where the generating threshold was 0.8. (The position of the threshold between \\textit{a} and \\textit{b} was fixed to 0.) c) Distribution across simulations of the estimated position of the threshold between character levels \\textit{c} and \\textit{d}, where the generating threshold was 2. All threshold model parameter estimates were obtained using the \\textit{phytools} R package (Revell 2024) under the discretized diffusion approximation. See main text for additional details.", fig.align="center", out.width = "80%"}
+load("fig7.rda")
+layout(mat=matrix(c(1,1,2,3),2,2,byrow=TRUE),heights=c(3.25,2.75))
+ii<-order(thresh_w[,1],decreasing=TRUE)
+par(mar=c(2.1,4.1,2.1,2.1))
+cols<-hcl.colors(n=3)
+obj<-barplot(t(thresh_w[ii,]),border="transparent",
+  las=1,cex.axis=0.8,ylim=c(-0.2,1),axes=FALSE,
+  col=cols)
+axis(2,at=seq(0,1,by=0.2),las=1,cex.axis=0.8)
+legend(x=mean(obj),y=0,
+  c("       model weights:","threshold model",
+    "symmetric ordered Mk","asymmetric ordered Mk"),
+  horiz=TRUE,bty="n",xjust=0.5,pch=15,col=c(NA,hcl.colors(n=3)),
+  cex=0.8,pt.cex=1.5)
+mtext("a)",adj=0,line=1)
+par(mar=c(4.1,4.1,2.1,2.1))
+bb<-seq(0.75,min(est_thresholds[,2])-0.1,by=-0.1)
+bb<-c(bb[length(bb):1],
+  seq(0.75,max(est_thresholds[,2]),by=0.1)+0.1)
+h1<-hist(est_thresholds[,2],breaks=bb,plot=FALSE)
+plot(NA,xlim=range(h1$breaks),
+  ylim=c(0,0.5),las=1,
+  bty="n",xlab="estimated threshold",ylab="relative frequency",
+  cex.axis=0.8)
+d<-h1$mids[2]-h1$mids[1]
+xx<-as.vector(rbind(h1$mids-d/2,h1$mids+d/2))
+yy<-as.vector(rbind(h1$counts,h1$counts)/sum(h1$counts))
+polygon(x=c(xx[1],xx,xx[length(xx)]),y=c(0,yy,0),
+  col=make.transparent(hcl.colors(n=1),0.5))
+ii<-which.min(abs(h1$mids-0.8))
+## arrows(x0=0.8,y0=0.4,y1=h1$counts[ii]/sum(h1$counts),length=0.1)
+lines(c(0.8,0.8),c(0.4,0),lwd=2,col="grey",lend=1)
+text(x=0.8,y=0.4,"generating\nthreshold",pos=3,cex=0.8)
+mtext("b)",adj=0,line=1)
+bb<-seq(1.9,min(est_thresholds[,3])-0.2,by=-0.2)
+bb<-c(bb[length(bb):1],
+  seq(1.9,max(est_thresholds[,3]),by=0.2)+0.2)
+h2<-hist(est_thresholds[,3],breaks=bb,plot=FALSE)
+plot(NA,xlim=range(h2$breaks),
+  ylim=c(0,0.6),las=1,
+  bty="n",xlab="estimated threshold",ylab="relative frequency",
+  cex.axis=0.8)
+d<-h2$mids[2]-h2$mids[1]
+xx<-as.vector(rbind(h2$mids-d/2,h2$mids+d/2))
+yy<-as.vector(rbind(h2$counts,h2$counts)/sum(h2$counts))
+polygon(x=c(xx[1],xx,xx[length(xx)]),y=c(0,yy,0),
+  col=make.transparent(hcl.colors(n=1),0.5))
+ii<-which.min(abs(h2$mids-2))
+## arrows(x0=2,y0=0.5,y1=h2$counts[ii]/sum(h2$counts),length=0.1)
+lines(c(2,2),c(0.5,0),lwd=2,col="grey",lend=1)
+text(x=2,y=0.5,"generating\nthreshold",pos=3,cex=0.8)
+mtext("c)",adj=0,line=1)
+```
+```{r, eval=FALSE, echo=FALSE}
+f_max<-mean(apply(thresh_w,1,which.max)==1)
+f_max
+g_75<-mean(thresh_w[,1]>0.75)
+g_75
+```
+
+To illustrate the usefulness of this approach for fitting a multi-state threshold model to comparative data, we undertook a small simulation study. We first generated one hundred 200-taxon stochastic pure-birth phylogenetic trees, each scaled to 3.0 units of total depth. We next simulated liability evolution on each tree under Brownian motion with $x_0$ sampled randomly on the interval $[-1, 3]$ and $\sigma^2 = 1.0$. We created a discrete threshold character with up to four states from these simulated liability values using the thresholds of $[0, 0.8, 1]$ between the discrete character levels *a* and *b*, *b* and *c*, and *c* and *d*, respectively, although in some cases not all four character states were observed among living taxa of our simulation. We proceeded to fit a multi-state threshold model (using the discretized diffusion approximation), as well as both symmetric and asymmetric ordered M*k* models (the two flavors of M*k* model that we felt most closely resembled an ordered multi-state threshold process), to each simulated tree and dataset [@Pagel1994; @Lewis2001; @Revell2022-book]. 
+
+From the results of each simulation and analysis we first extracted the Akaike model weights of each of our three fitted models, and then the Maximum Likelihood estimated relative positions of the two estimable thresholds between discrete character levels. (Since the liabilities are unobserved and unitless, $\sigma^2$ must be set to a constant value, e.g., $\sigma^2 = 1$, and one of the thresholds is invariably fixed. We fixed the threshold between character levels *a* and *b* to be 0, as this was the simulated value.) Results from this analysis are shown in Figure \@ref(fig:fig7).
+
+In general, we found that when data were simulated under a threshold model, the same model had the highest Akaike weight in 78\% of simulations, and had at least 0.75 model weight in nearly $\frac{2}{3}$ of all analyses (Figure \@ref(fig:fig7)a). We also found that the distribution of estimated thresholds tended to be centered on the generating values of the two estimable thresholds in the model (Figures \@ref(fig:fig7)b, \@ref(fig:fig7)c).
+
+## A new semi-threshold model
+
+As we reviewed in the prior section, a threshold model is one in which the observed trait is discretely-valued but underlain by an unobserved continuous character referred to as liability [@Wright1934; @Felsenstein2005; @Felsenstein2012; @Revell2014b; @Revell2022-book]. Here we define a "semi-threshold" model, on the other hand, as one where we imagine that, on some part of its range, liability can be directly observed as a measurable quantitative trait. After crossing a given threshold, however, the character is fixed and liability can no longer be observed. Just as for the standard threshold model, trait liability, though no longer observable, nonetheless continues to evolve via the same stochastic process as on its observable range. As far as we know, this model is totally new to phylogenetic comparative biology.
+
+```{r, echo=FALSE, eval=FALSE}
+## create "phylo" object
+set.seed(155)
+t<-list(
+  edge=matrix(c(
+    5,6,
+    6,7,
+    7,2,
+    7,1,
+    6,8,
+    8,3,
+    8,4
+  ),7,2,byrow=TRUE),
+  edge.length=c(0.3,0.2,0.5,0.5,0.6,0.1,0.1),
+  Nnode=4,
+  tip.label=c("T3","T4","T2","T1"))
+class(t)<-"phylo"
+t$edge.length<-t$edge.length
+## add nodes
+tt<-make.era.map(t,limits=seq(0,max(nodeHeights(t)),
+  length.out=100))
+tt<-map.to.singleton(tt)
+## simulate with internal states
+z<-fastBM(tt,a=0.5,internal=TRUE)
+## make "simmap" object
+ss<-tt
+ss$maps<-list()
+for(i in 1:nrow(ss$edge)){
+  if(all(z[ss$edge[i,]]<=0)){ 
+    ss$maps[[i]]<-setNames(ss$edge.length[i],"0")
+  } else if(all(z[ss$edge[i,]]>=1)){ 
+    ss$maps[[i]]<-setNames(ss$edge.length[i],"1")
+  } else if(z[ss$edge[i,2]]<0){
+    nm<-round(z[ss$edge[i,1]],2)
+    ss$maps[[i]]<-setNames(abs(z[ss$edge[i,]])/
+        sum(abs(z[ss$edge[i,]])),c(nm,"0"))*ss$edge.length[i]
+  } else if(z[ss$edge[i,1]]<0){
+    nm<-round(z[ss$edge[i,2]],2)
+    ss$maps[[i]]<-setNames(abs(z[ss$edge[i,]])/
+        sum(abs(z[ss$edge[i,]])),c("0",nm))*ss$edge.length[i]
+  } else if(z[ss$edge[i,2]]>1){
+    nm<-round(z[ss$edge[i,1]],2)
+    ss$maps[[i]]<-setNames(abs(1-z[ss$edge[i,]])/
+        sum(abs(1-z[ss$edge[i,]])),c(nm,"1"))*ss$edge.length[i]
+  } else if(z[ss$edge[i,1]]>1){
+    nm<-round(z[ss$edge[i,2]],2)
+    ss$maps[[i]]<-setNames(abs(1-z[ss$edge[i,]])/
+        sum(abs(1-z[ss$edge[i,]])),c("1",nm))*ss$edge.length[i]
+  } else {
+    nm<-round(mean(z[ss$edge[i,]]),2)
+    ss$maps[[i]]<-setNames(ss$edge.length[i],nm)
+  }
+}
+class(ss)<-c("simmap","phylo")
+
+## VCV structure on original "phylo" object
+V<-vcv(t)
+## "exact" probability
+zz<-z[t$tip.label]
+delta<-0.0000001
+ln_prob <- mvtnorm::lpmvnorm(
+  lower =c(-Inf,zz[2]-delta/2,1,1), 
+  upper = c(0,zz[2]+delta/2,Inf,Inf), 
+  mean = 0.5, 
+  chol=mvtnorm::as.ltMatrices(t(chol(V))),
+  M=25000)-log(delta)
+
+## prep for discrete approximation
+x<-zz
+x[zz<0]<-0
+x[zz>1]<-1
+pw<-reorder(t,"pruningwise")
+## discrete approximation for different no. of bins
+k<-c(5,10,20,40,80,160,320,640)
+ln_prob_disc<-vector()
+for(i in 1:length(k)){
+  xx<-seq(-3,3,length.out=k[i]+1)
+  d<-diff(range(xx))/k[i]
+  MODEL<-matrix(0,k[i]+1,k[i]+1)
+  for(j in 2:(k[i]+1)) MODEL[j-1,j]<-MODEL[j,j-1]<-1
+  X<-matrix(0,nrow=length(x),ncol=length(xx))
+  colnames(X)<-round(xx,3)
+  rownames(X)<-names(x)
+  for(j in 1:length(x)){
+    if(x[j]==0) X[j,xx<=0]<-1
+    else if(x[j]==1) X[j,xx>=1]<-1
+    else {
+      jj<-intersect(which(x[j]>(xx-d/2)),
+        which(x[j]<(xx+d/2)))
+      X[j,jj]<-1
+    }
+  }
+  q<-1/(2*d^2)
+  ROOT<-rep(0,k[i]+1)
+  ROOT[which.min(abs(xx-0.5))]<-1
+  ln_prob_disc[i]<-
+    phytools:::pruning(q,pw,X,model=MODEL,pi=ROOT)-
+    log(d)
+}
+save(t,tt,z,ss,ln_prob_disc,k,ln_prob,file="fig8.rda")
+```
+```{r fig8, echo=FALSE, fig.width=8, fig.height=6.5, fig.cap="Estimation under a new semi-threshold model. a) Evolution of the quantitative trait or trait liability via Brownian motion. When the quantitative trait reaches either threshold of 0 or 1 (in this example), it becomes ``stuck'' on this value, even while liability continues to evolve. b) Corresponding continuous and discrete character phylogenetic history based on the trait evolution of panel (a). c) Comparison of ``exact'' log(probability density) of the continuous and discrete character data at the tips of the tree in panel (b) to the discrete approximation for various numbers of bins. See main text for additional details.", fig.align="center", out.width = "80%"}
+load("fig8.rda")
+## plot
+## #717171
+layout(mat=matrix(c(1,2,3,3),2,2,byrow=TRUE),heights=c(3.25,3.25))
+par(mar=c(5.1,4.1,3.1,1.1))
+cols<-setNames(c("black",hcl.colors(n=99),"white"),seq(0,1,by=0.01))
+phenogram(tt,z,spread.labels=FALSE,lwd=5,las=1,cex.axis=0.8,
+  ylab="liability",ylim=c(-1.7,1.7))
+phenogram(ss,z,spread.labels=FALSE,lwd=3,add=TRUE,colors=cols)
+text(0.18,0.05,"threshold",pos=1,cex=0.8)
+text(0.18,0.95,"threshold",pos=3,cex=0.8)
+lines(c(0,1),rep(0,2),lty="dotted",col="blue")
+lines(c(0,1),rep(1,2),lty="dotted",col="blue")
+mtext("a)",adj=0,line=1)
+
+cbh<-par()$usr[3]+0.2*diff(par()$usr[3:4])
+cbx<-0.1*diff(par()$usr[1:2])
+
+add.color.bar(0.5*max(nodeHeights(t)),
+  cols=hcl.colors(n=99),
+  title="phenotype (if observed)",
+  lims=NULL,digits=2,prompt=FALSE, 
+  lwd=6,outline=FALSE,x=cbx,y=cbh,
+  fsize=0.7,subtitle="")
+
+text(cbx,y=cbh,"> 0",pos=2,cex=0.8)
+text(cbx+0.5*max(nodeHeights(t)),y=cbh,
+  "< 1",pos=4,cex=0.8)
+
+legend(x=cbx-0.03,y=cbh-0.1,c("0","1"),pch=22,
+  pt.bg=c("black","white"),horiz=TRUE,
+  cex=0.8,pt.cex=1.25,bty="n")
+
+plotTree(tt,mar=c(5.1,4.1,3.1,1.1),
+  lwd=5,ylim=c(0.5,4.5))
+plot(ss,mar=c(5.1,4.1,3.1,1.1),
+  colors=cols,lwd=3,ylim=c(0.5,4.5),add=TRUE,ftype="off",
+  xlim=get("last_plot.phylo",envir=.PlotPhyloEnv)$x.lim)
+axis(1,cex.axis=0.8)
+title(xlab="time")
+mtext("b)",adj=0,line=1)
+
+plot(ln_prob_disc,type="b",pch=16,bty="n",
+  axes=FALSE,cex=1.5,xlab="number of bins",
+  ylab="log(density)")
+abline(h=ln_prob,lty="dotted",col="blue")
+axis(1,at=1:length(k),labels=k,cex.axis=0.8)
+axis(2,cex.axis=0.8,las=1)
+legend("topright",c("\"exact\" probability","discrete approximation"),
+lty=c("dotted","solid"),pch=c(NA,16),pt.cex=c(NA,1.5),bty="n",
+cex=0.8,col=c("blue","black"))
+mtext("c)",adj=0,line=1)
+```
+
+A simple example of a trait whose evolutionary dynamics could conceivably resemble this scenario might be "horn length" which can increase or decrease -- but when it shrinks to zero, the horn is simply absent and can no longer be measured. The ability to produce a horn (now our unseen trait "liability") might continue to evolve even if the horn is no longer present and measurable. (Species characteristics measured as the fraction of a whole, a phenotype that can only be observed in continuous form between 0 and 1, but that may nonetheless continue to change unobservably outside this range, is another example of a trait that could conceivably evolve via semi-threshold dynamics.)
+
+Evolution under a semi-threshold process is illustrated by Figures \@ref(fig:fig8)a and \@ref(fig:fig8)b. Figure \@ref(fig:fig8)a shows the evolution of a single quantitative trait on the four-taxon tree of Figure \@ref(fig:fig8)b under a scenario in which the continuous character is observable on the interval $[0, 1]$, but measurable only as being in condition $0$ (or below, shown in black on the figure) or condition $1$ (or above, shown in white) when outside this narrow range of values. The observable character history is projected onto the edges of the tree in Figure \@ref(fig:fig8)b.
+
+To compute the probability density of a set of data that we hypothesize have arisen under the semi-threshold scenario described above, we must evaluate an $N$ dimensional multivariate normal density (for $N$ taxa) over a region defined jointly by the observed (that is, non-thresholded) and censored (thresholded) values. For each tip whose trait falls within the observable range we evaluate the density at its observed value, whereas for tips falling below or above the threshold(s) we integrate the density over the corresponding semi-infinite interval [@Tobin1958]. The likelihood is then given by the integral of the full multivariate normal over this mixed region of exact and truncated observations.
+
+Fitting this model to data suffers from precisely the same difficulty as was described by @Felsenstein2005 for the standard threshold model in that no closed form solution exists for the integral of our multivariate normal density, and numerical methods to approximate it become unreliable for high $N$. Our new model, however, poses no difficulty whatsoever for the discretized diffusion approximation. Figure \@ref(fig:fig8)c illustrates the increasing resemblance between a log(density) computed from the discrete approximation, and the exact value obtained via numerical integration, for increasing number of bins (i.e., for decreasing bin widths, $\delta$).
+
+To demonstrate parameter estimation under this new model, we undertook a small simulation study, similar to what we did for both the bounded model of @Boucher2016 and the multi-state threshold model from the prior section. In brief, we simulated one hundred 200-taxon stochastic pure-birth phylogenetic trees. For each simulated phylogeny, we randomly sampled a generating value of $\log(\sigma^2)$ from a normal distribution with mean of zero and variance of one. We randomly sampled $x_0$, the root state, uniformly on the interval $[-1, 1]$. Then, we simulated data under the semi-threshold model with upper and lower thresholds of $[-1, 1]$: meaning that the value of liability was observable on that interval, but simply measured as $-1$ or $1$ outside of it. We proceeded to fit both the semi-threshold model, using our discretized diffusion approximation to compute the likelihood, or a standard Brownian motion model to each simulated tree and dataset. Our results are shown in Figure \@ref(fig:fig9).
+
+```{r, eval=FALSE, echo=FALSE}
+library(phytools)
+
+set.seed(99)
+nsim<-100
+Ntaxa<-200
+levs<-200
+results<-matrix(NA,nsim,7,dimnames=list(1:nsim,c("true_sig2",
+  "true_x0","sig2","x0","logL","bm_sig2","bm_x0")))
+sig2<-exp(rnorm(n=nsim))
+x0<-runif(n=nsim,-1,1)
+threshold.fits<-bm.fits<-list()
+for(i in 1:nsim){
+  ## simulate
+  tree<-pbtree(n=Ntaxa,scale=1)
+  x<-fastBM(tree,sig2=sig2[i],a=x0[i])
+  x[x>1]<-1
+  x[x<(-1)]<-(-1)
+  ## fit using phytools::fitsemiThresh
+  threshold.fits[[i]]<-
+    list(mk_fit=list(opt_results=list(convergence=99)))
+  class(threshold.fits[[i]])<-"try-error"
+  while(inherits(threshold.fits[[i]],"try-error")||
+      threshold.fits[[i]]$mk_fit$opt_results$convergence!=0){
+    threshold.fits[[i]]<-try(fitsemiThresh(tree,x,threshold=c(-1,1),
+      root="mle",lik.func="pruning",levs=levs),silent=TRUE)
+  }
+  ## fit standard BM
+  bm.fits[[i]]<-geiger::fitContinuous(tree,x)
+  ## store result
+  results[i,]<-c(sig2[i],x0[i],
+    threshold.fits[[i]]$sigsq,
+    threshold.fits[[i]]$x0,
+    logLik(threshold.fits[[i]]),
+    bm.fits[[i]]$opt$sigsq,bm.fits[[i]]$opt$z0)
+  cat(paste("Done iteration",i,"...\n"))
+}
+save(results,threshold.fits,bm.fits,file="fig9.rda")
+```
+```{r fig9, echo=FALSE, fig.width=9, fig.height=7.5, fig.cap="Parameter estimation under a new ``semi-threshold'' model for continuous trait evolution using the discretized diffusion approximation. The point color gradient corresponds to the generating stochastic diffusion rate, $\\sigma^2$, in which lighter colors match higher values of $\\sigma^2$. a) Generating vs. estimated $\\sigma^2$ obtained by fitting our new semi-threshold model using the discrete diffusion approximation. b) Generating vs. estimated $x_0$ from the same semi-threshold model as in panel (a). c) Generating vs. estimated $\\sigma^2$ when standard Brownian motion evolution is assumed. d) Generating vs. estimated $x_0$ under standard Brownian motion. Semi-threshold model parameter estimates were obtained using the \\textit{phytools} R package (Revell 2024) using the discretized diffusion approximation, while unbounded Brownian motion estimates come from the \\textit{geiger} package (Pennell et al. 2014), as in Figure 5. See main text for additional details.", fig.align="center", out.width = "90%"}
+load("fig9.rda")
+par(mar=c(5.1,4.1,3.1,1.1))
+cols<-hcl.colors(n=nrow(results))
+ii<-order(results[,"true_sig2"])
+results<-results[ii,]
+ln_sig2<-log(results[,"true_sig2"])
+cols<-cols[round((ln_sig2-min(ln_sig2))/diff(range(ln_sig2))*99)+1]
+layout(mat=matrix(c(1,2,5,3,4,5),2,3,byrow=TRUE),heights=c(3.5,3.5),
+  widths=c(3.5,3.5,0.75))
+xylim.sig2<-c(min(c(
+  results[,"true_sig2"],
+  results[,"sig2"],
+  results[,"bm_sig2"])),
+  max(c(
+    results[,"true_sig2"],
+    results[,"sig2"],
+    results[,"bm_sig2"])))
+plot(NA,xlab=expression(paste("generating ",sigma^2)),
+  ylab=expression(paste("estimated ",sigma^2," (fitsemiThresh)")),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.sig2,ylim=xylim.sig2,
+  log="xy")
+mtext("a)",line=1,adj=0)
+grid()
+points(results[,"true_sig2"],results[,"sig2"],
+  pch=16,col=cols,las=1,,cex=1.6)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.sig2,xylim.sig2)
+xylim.x0<-c(min(c(
+  results[,"true_x0"],
+  results[,"x0"],
+  results[,"bm_x0"])),
+  max(c(
+    results[,"true_x0"],
+    results[,"x0"],
+    results[,"bm_x0"])))
+plot(NA,xlab=expression(paste("generating ",x[0])),
+  ylab=expression(paste("estimated ",x[0]," (fitsemiThresh)")),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.x0,ylim=xylim.x0)
+mtext("b)",line=1,adj=0)
+grid()
+points(results[,"true_x0"],results[,"x0"],pch=16,col=cols,cex=1.6)
+lines(xylim.x0,xylim.x0)
+plot(NA,xlab=expression(paste("generating ",sigma^2)),
+  ylab=expression(paste("estimated ",sigma^2," (fitContinuous)")),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.sig2,ylim=xylim.sig2,
+  log="xy")
+mtext("c)",line=1,adj=0)
+grid()
+points(results[,"true_sig2"],results[,"bm_sig2"],pch=16,col=cols,
+  cex=1.6)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.sig2,xylim.sig2)
+plot(NA,xlab=expression(paste("generating ",x[0])),
+  ylab=expression(paste("estimated ",x[0]," (fitContinuous)")),
+  bty="n",las=1,cex.axis=0.8,xlim=c(-1,1),ylim=c(-1,1))
+mtext("d)",line=1,adj=0)
+grid()
+points(results[,"true_x0"],results[,"bm_x0"],pch=16,col=cols,
+  cex=1.6)
+lines(c(-1,1),c(-1,1))
+par(mar=c(0,0,0,0))
+plot(NA,xlim=c(-1,1),ylim=c(-1,1),axes=FALSE,bty="n")
+labels<-c(0.05,0.5,5)
+at<--0.5+(log(labels)-min(ln_sig2))/(max(ln_sig2)-min(ln_sig2))
+axis(2,at=at,labels=labels,pos=0.25,las=1,
+  cex.axis=0.7)
+segments(x0=0.25,y0=-0.5,x1=0.25,y1=0.5,lend=1)
+segments(x0=rep(0.5,100),x1=rep(0.5,100),
+  y0=seq(-0.5,0.49,by=0.01),y1=seq(-0.49,0.5,by=0.01),
+  col=hcl.colors(n=100),lwd=8,lend=1)
+text(x=-0.8,y=0,expression(paste("generating ",sigma^2)),srt=90)
+```
+
+In general, we found fairly reliable parameter estimation of both $\sigma^2$ and (to a slightly lesser extent) $x_0$ when the semi-threshold model was used for estimation (Figures \@ref(fig:fig9)a and \@ref(fig:fig9)b). By contrast, estimates of $\sigma^2$ tended to be much less reliable under standard Brownian motion, and were biased downwards for increased $\sigma^2$ (Figure \@ref(fig:fig9)c), just as we saw for the bounded model in Figure \@ref(fig:fig5).
+
+## A discrete character dependent continuous trait evolution model
+
+A third model for which we realized that the discretized diffusion approximation could be put to use was the joint evolution of a discrete and a continuous trait, where the condition of the former affects the Brownian motion rate of evolution of the latter. Precisely this scenario is illustrated by Figure \@ref(fig:fig10). Here, Figure \@ref(fig:fig10)a gives a discrete character history of a binary trait with two levels, *a* and *b*; while Figure \@ref(fig:fig10)b shows the history of Brownian motion evolution of a continuous trait where $\sigma_{a}^2$ (the rate of continuous trait evolution when the discrete state is in condition *a*) is $\sigma_{a}^2 = 1.0$, but $\sigma_{b}^2 = 20$.
+
+```{r fig10, echo=FALSE, fig.width=8, fig.height=4, fig.cap="Discrete state dependent continuous character evolution. a) Simulated phylogenetic tree showing a discrete character history of a binary trait with two levels, $a$ and $b$. b) Evolution of a continuous trait on the phylogeny of panel (a), where the rate of stochastic diffusion of the trait ($\\sigma^2$) varies as a function of the discrete trait such that $\\sigma_a^2 = 1.0$ and $\\sigma_b^2 = 20$.", fig.align="center", out.width = "80%"}
+## plot
+N<-20
+set.seed(99) #67
+layout(mat=matrix(c(3,3,1,2),2,2,
+  byrow=TRUE),heights=c(0,4))
+cols<-setNames(hcl.colors(n=2),letters[1:2])
+tree<-pbtree(n=N,scale=1) ## ,tip.label=LETTERS[N:1])
+tt<-map.to.singleton(make.era.map(tree,seq(0,1,
+  length.out=100)))
+Q<-0.5*matrix(c(-1,1,1,-1),2,2,
+  dimnames=list(letters[1:2],letters[1:2]))
+tt<-sim.history(tt,Q,anc="a",message=FALSE)
+plot(tt,cols,lwd=2,mar=c(5.1,4.1,3.1,1.1),
+  ftype="off")
+legend("bottomleft", 
+  legend = expression(paste(q["ab"], " = ",
+    q["ba"], " = ", 0.5)),
+  bty="n",cex=0.8)
+axis(1,cex.axis=0.8)
+title(xlab="time")
+mtext("a)",adj=0,line=1)
+x<-getStates(tt,"tips")
+y<-sim.rates(tt,sig2=setNames(c(1,20),letters[1:2]),
+  internal=TRUE)
+phenogram(tt,y,colors=cols,ftype="off",
+  cex.axis=0.8,las=1) 
+## ,spread.costs=c(0,1),spread.range=range(y))
+mtext("b)",adj=0,line=1)
+legend("bottomleft",c(
+  expression(paste(sigma[a]^2," = 1")),
+  expression(paste(sigma[b]^2," = 20"))),
+  col=cols,lwd=3,bty="n",cex=0.8,y.intersp=1.5)
+```
+
+A simple example of this sort of hypothesis might be one where different species of fish utilize pelagic (open water) or reef environments, and we're interested in asking whether the rate of body shape evolution differs between these two sorts of habitat types [@Friedman2020]. Perhaps we expect much less shape evolution to occur per unit time in pelagic compared to reef habitats, due to the aquadynamical constraints of fast open-water swimming [e.g., @Friedman2020]. Similarly, among polygynous and monogamous social mating systems in songbirds, we could hypothesize a higher rate of birdsong evolution in association with the former compared to the latter social mating system characteristic, due to stronger sexual selection on polygynous compared to socially monogamous male birds [e.g., @Snyder2019].
+
+The classic workflow to test hypotheses based on the evolutionary scenario of Figure \@ref(fig:fig10), (or our hypotheses of habitat-dependent fish body shape evolution, or mating system dependent birdsong evolution, described in the previous paragraph) is a two-step procedure that involves first sampling a set of stochastic character mapped trees of our discrete trait in proportion to their probability following @Huelsenbeck2003, and then fitting a rate-varying model to each sampled map and the continuous trait using the method of @OMeara2006. This workflow, though quite common in the literature, suffers from the problem that it will tend to underestimate the difference in rates between character levels of the discrete trait, as shown by @Revell2013b, particularly for high transition rates of our discrete trait. We also suspect that it leads to less accurate estimation of the transition rates between character levels in the discrete trait itself, since the continuous character should also contain information about this process, but that information has been ignored in the two-step methodology.
+
+At least two other notable related approaches have been proposed to address this problem. Firstly, @May2020 provide a Bayesian method to coestimate the transition process of a discrete character and discrete-state-dependent continuous character evolution with background rate variation. This method uses data augmentation of the discrete character data with unobserved discrete character histories over the tree and calculates an augmented likelihood as the product of the probability of the discrete character data and augmented history, times the conditional probability of the continuous trait data given the augmented history.  Similarly, @Boyko2023 proposed a solution for jointly modeling discrete and continuous trait evolution; however, their approach does not allow for non-Gaussian continuous trait evolution processes and requires stochastic mapping as an internal step. This might also be viewed as a different sort of approximation and is definitely not exactly equivalent to what we propose herein. 
+
+Our approach differs in that it involves calculating the probability density of our discrete and continuous characters' joint evolution directly, using an approximation (the discretized diffusion approximation) that should become exact in the limit as the interval width of our discretization, $\delta$, goes towards zero. Likewise, our model does not necessarily assume a Gaussian process of evolution for the continuous trait. It would be no trouble at all, for example, to fit this model to data assuming that evolution of the continuous trait occurred within reflective bounds, as in @Boucher2016, or under a semi-threshold process, like that described in the preceding section, among other evolutionary scenarios.
+
+```{r fig11, echo=FALSE, fig.width=8, fig.height=6, fig.cap="Illustrative figure showing the design-matrix of a discrete-state-dependent multi-rate continuous character evolution model for the discrete diffusion approximation. Here, $q_{c,a} = \\sigma_{a}^2/(2\\delta^2)$ and $q_{c,b} = \\sigma_{b}^2/(2\\delta^2)$ give the discrete character dependent transition rates between adjacent bins for our continuous trait, while $q_{ab}$ and $q_{ba}$ give the discrete character transition rates which are here assumed to be equal one to the other, but need not be in general. Merely to make the visualization practical, the number of bins for discretization, $n$, has been set to 40, though in practice a much larger number would be used to obtain accurate parameter estimation and model selection.", fig.align="center", out.width = "70%"}
+## set number of levels for discretization
+levs<-40
+x<-as.factor(x)
+## set range of continuous trait (far outside observed data)
+lims<-phytools:::expand.range(y[1:Ntip(tree)])
+dd<-diff(lims)
+tol<-1e-8*dd/levs
+## calculate bins
+bins<-cbind(seq(from=lims[1]-tol,by=(dd+2*tol)/levs,
+  length.out=levs),seq(to=lims[2]+tol,by=(dd+2*tol)/levs,
+    length.out=levs))
+## bin discrete data
+X<-phytools:::to_binned(y[1:Ntip(tree)],bins)
+## identify all combinations of discrete character
+## and binned continuous trait
+nn<-c(paste(levels(x)[1],colnames(X),sep=","),
+  paste(levels(x)[2],colnames(X),sep=","))
+## create a new, larger N x n*k data matrix
+eeX<-matrix(0,nrow=nrow(X),ncol=2*levs,
+  dimnames=list(rownames(X),nn))
+for(i in 1:nrow(X))
+  eeX[i,1:levs+(as.numeric(x)[i]-1)*levs]<-X[i,]
+model<-matrix(0,ncol=ncol(eeX),nrow=ncol(eeX),
+  dimnames=list(nn,nn))
+for(i in 1:(levs-1)){
+  model[i,i+1]<-1
+  model[i+1,i]<-1
+  model[i+levs,i+1+levs]<-2
+  model[i+1+levs,i+levs]<-2
+}
+for(i in 1:levs)
+  model[i,i+levs]<-model[i+levs,i]<-3
+par(mar=c(2.6,2.6,2.6,12.1))
+plot(NA,xlim=c(0,ncol(model)+1),ylim=c(nrow(model),0),
+  bty="n",axes=FALSE,xlab="",ylab="",asp=1)
+cols<-c("white",hcl.colors(n=3))
+for(i in 1:nrow(model)){
+  for(j in 1:ncol(model)){
+    polygon(x=c(-1,0,0,-1)+j,y=c(-1,-1,0,0)+i,
+      col=cols[model[j,i]+1],border="transparent")
+  }
+}
+x_val<-c(min(rowMeans(bins)),mean(rowMeans(bins)),
+  max(rowMeans(bins)))
+axis(side=1,at=seq(0.5,levs-0.5,length.out=3),
+  labels=rep("",3))
+text(x=seq(0.5,levs-0.5,length.out=3),
+  y=par()$usr[3]+2,labels=round(x_val,1),
+  srt=45,adj=1,xpd=TRUE,cex=0.6)
+axis(side=1,at=seq(0.5,levs-0.5,length.out=3)+levs,
+  labels=rep("",3))
+text(x=seq(0.5,levs-0.5,length.out=3)+levs,
+  y=par()$usr[3]+2,labels=round(x_val,1),
+  srt=-45,adj=0,xpd=TRUE,cex=0.6)
+axis(side=2,at=seq(0.5,levs-0.5,length.out=3),
+  labels=rep("",3))
+text(x=par()$usr[1]-2,
+  y=seq(0.5,levs-0.5,length.out=3),
+  labels=round(x_val,1),
+  srt=-45,adj=1,xpd=TRUE,cex=0.6)
+axis(side=2, at=seq(0.5, levs-0.5, 
+  length.out=3)+levs, labels=rep("",3))
+text(x=par()$usr[1]-2,
+  y=seq(0.5, levs-0.5, length.out=3)+levs,
+  labels=round(x_val,1),
+  srt=45, adj=1, xpd=TRUE, cex=0.6)
+axis(side=3,at=seq(0.5,levs-0.5,length.out=2),tcl=0.5,
+  labels=rep("",2))
+axis(side=3,at=levs/2,tcl=-0.5,labels="0")
+axis(side=3,at=seq(0.5,levs-0.5,length.out=2)+levs,tcl=0.5,
+  labels=rep("",2))
+axis(side=3,at=levs/2+levs,tcl=-0.5,labels="1")
+axis(side=4,at=seq(0.5,levs-0.5,length.out=2),tcl=0.5,
+  labels=rep("",2))
+axis(side=4,at=levs/2,tcl=-0.5,labels="0")
+axis(side=4,at=seq(0.5,levs-0.5,length.out=2)+levs,tcl=0.5,
+  labels=rep("",2))
+axis(side=4,at=levs/2+levs,tcl=-0.5,labels="1",las=1)
+legend(x=ncol(model)+20, y=0,
+  legend=c(
+    expression(q[c*","*a] == sigma[a]^2/(2*delta^2)),
+    expression(q[c*","*b] == sigma[b]^2/(2*delta^2)),
+    expression(paste(q[ab] == q[ba]))
+  ),
+  xpd=NA, pch=15, col=hcl.colors(n=3),
+  cex=0.8, pt.cex=1.5, y.intersp=1.5, bty="n")
+clip(0,2*levs,0,2*levs)
+grid()
+```
+
+To compute the probability under this model using the discretized diffusion approximation, we begin by building a $k \cdot n \times k \cdot n$ matrix, for $k$ levels of our discrete trait and $n$ bins of discretization. The main super- and sub-diagonals of this matrix will be populated by the values $q_{c,i} = \sigma_{i}^2/(2\delta^2)$ for each $i$ through $k$ discrete-state-dependent stochastic diffusion rates, $\sigma_{i}^2$. Each non-diagonal $n \times n$ sub-matrix super- and sub-diagonals, by contrast, contain the discrete character transition rates between each of the $k$ levels of our discrete character. An illustration of this model structure is given in Figure \@ref(fig:fig11) for 40 bins of discretization, although for accurate model parameter estimation a much finer discretization is recommended. In Figure \@ref(fig:fig11), the macro-structure of this transition matrix consists of $k \times k =$ four quadrants: two (those along the diagonal) describing the evolution of the continuous character and two (off the diagonal) describing the transition process for the discrete trait. Each non-zero row and column of the matrix corresponds with one particular combination of a continuous character bin of width $\delta$ and discrete character state (Figure \@ref(fig:fig11)).
+
+As for our bounded model, above, the probability density of our continuous trait data can be calculated as $f(\mathbf{x}) = p(\mathbf{x}')/(\delta^N)$, where $\mathbf{x}'$ once again contains the discretized values of our continuous trait $x$.
+
+To examine the effectiveness of this method to simultaneously estimate the discrete state specific rates of continuous trait evolution, $\sigma_{a}^2$ and $\sigma_{b}^2$, and the rate of transition between discrete states, $q_{ab}$ and $q_{ba}$, we undertook a small simulation experiment.
+
+First, we simulated forty 200-taxon stochastic pure-birth phylogenetic trees with total tree depths of 1.0. On each tree, we next generated a binary discrete character history by first drawing the transition rate between character levels, $q_{ab} = q_{ba}$, at random from a uniform distribution on the interval $[1, 10]$. This corresponds to quite a high rate of transition between character states, given our total tree depth, which was done on purpose because if the rate of transition is low, then our discrete character changes very seldom and the distinction between our new joint vs. the traditional two-step estimation methods becomes much less significant. Then, we simulated continuous trait evolution that depended on our discrete trait histories, with $\sigma_{a}^2$ drawn randomly from a uniform distribution on $[0.5, 2]$ and $\sigma_{b}^2$ drawn randomly on $[5, 20]$. This ensures that $\sigma_{b}^2 > \sigma_{a}^2$, though the magnitude of difference between the two rates varied widely across simulations.
+
+(Readers might note that the *scale* of this simulation study is smaller than we've used for previous models. This is because estimation is inherently more computationally challenging for this model than for the others described to this point. The reason for this is largely beyond the scope of the present article, but pertains primarily to the difficulty of large matrix exponentiation. This problem will become even more substantive for the final two models of this article, to be discussed below.)
+
+```{r, echo=FALSE, eval=FALSE}
+set.seed(77)
+
+## set simulation conditions
+nsim<-40
+N<-200
+Q<-matrix(c(-1,1,1,-1),2,2,
+  dimnames=list(c("a","b"),c("a","b")))
+q<-runif(n=nsim,1,10)
+sig2<-replicate(nsim,
+  setNames(c(runif(n=1,0.5,2),runif(n=1,5,20)),
+    c("a","b")),simplify=FALSE)
+## simulate trees and data
+trees<-pbtree(n=N,nsim=nsim,scale=1)
+tt<-mapply(sim.history,tree=trees,
+  Q=lapply(q,function(q,Q) q*Q,Q=Q),
+  MoreArgs=list(message=FALSE),SIMPLIFY=FALSE)
+y<-lapply(tt,getStates,type="tips")
+x<-mapply(sim.rates,tree=tt,sig2=sig2,
+  SIMPLIFY=FALSE)
+
+## create list to populate
+fits_mbm<-list()
+## iterate over simulated data
+for(i in 1:nsim){
+  cat(paste("dataset #",i,": \n",sep=""))
+  ## repeat if non-convergent or fails
+  fits_mbm[[i]]<-list(opt_results=list(convergence=1))
+  while(fits_mbm[[i]]$opt_results$convergence!=0){
+    class(fits_mbm[[i]])<-"try-error"
+    while(inherits(fits_mbm[[i]],"try-error")){
+      fits_mbm[[i]]<-try(fitmultiBM(tree=trees[[i]],
+        x=x[[i]],y=y[[i]],parallel=TRUE))
+    }
+    cat(paste("\tlog(L) = ",
+      paste(round(logLik(fits_mbm[[i]]),3),
+        collapse=" "),"\n",sep=""))
+  }
+}
+
+mk_fits<-mapply(function(t,x) fitMk(t,x,
+  lik.func="pruning",rand_start=TRUE),
+  t=trees,x=y,SIMPLIFY=FALSE)
+
+save(nsim,N,q,sig2,trees,x,y,mk_fits,fits_mbm,file="fig12.rda")
+```
+```{r fig12, echo=FALSE, fig.width=9, fig.height=3.75, fig.cap="Parameter estimation under a discrete character dependent multi-rate continuous trait evolution model obtained using the discrete diffusion approximation. a) Generating vs. estimated $\\sigma_{a}^2$. b) Generating vs. estimated $\\sigma_{b}^2$. The color gradient of points matches the generating transition rate between discrete character states, $q_{ab} = q_{ba}$, with lighter colors corresponding to higher transition rates for the discrete trait. Model parameter estimates were obtained using the \\textit{phytools} R package (Revell 2024). See main text for additional details.", fig.align="center", out.width = "90%"}
+load("fig12.rda")
+col<-hcl.colors(n=100)
+ln_q<-c(log(q),log(1),log(10))
+col<-col[round((ln_q-min(ln_q))/diff(range(ln_q))*99)+1]
+col<-col[-(length(col)-c(0,1))]
+
+layout(mat=matrix(c(4,4,3,1,2,3),2,3,byrow=TRUE),
+  heights=c(0,4),widths=c(3.5,3.5,0.75))
+par(mar=c(5.1,5.1,3.1,1.1))
+
+sig2_gen<-t(sapply(sig2,function(x) x))
+sig2_est<-t(sapply(fits_mbm,function(x) x$sigsq))
+
+xylim<-range(c(0.2,5,sig2_gen[,1],sig2_est[,1]))
+plot(sig2_gen[,1],sig2_est[,1],log="xy",
+  xlim=xylim,ylim=xylim,
+  xlab=expression(paste("true value of ",
+    sigma[a]^2)),
+  ylab=expression(paste("fitmultiBM estimate of ",
+    sigma[a]^2)),pch=16,col=col,cex=1.6,las=1,
+  cex.axis=0.8,bty="n",axes=FALSE)
+axis(1,at=c(0.2,0.5,1,2,5),cex.axis=0.8)
+axis(2,at=c(0.2,0.5,1,2,5),cex.axis=0.8)
+grid()
+lines(xylim,xylim)
+mtext("a)",line=1,adj=0)
+xylim<-range(c(sig2_gen[,2],sig2_est[,2]))
+plot(sig2_gen[,2],sig2_est[,2],log="xy",
+  xlim=xylim,ylim=xylim,
+  xlab=expression(paste("true value of ",
+    sigma[b]^2)),
+  ylab=expression(paste("fitmultiBM estimate of ",
+    sigma[b]^2)),pch=16,col=col,cex=1.6,las=1,
+  cex.axis=0.8,bty="n")
+grid()
+lines(xylim,xylim)
+mtext("b)",line=1,adj=0)
+
+par(mar=c(0,0,0,0))
+plot(NA,xlim=c(-1,1),ylim=c(-0.75,0.75),axes=FALSE,bty="n")
+labels<-c(1,2,5,10)
+at<--0.5+(log(labels)-min(ln_q))/(max(ln_q)-min(ln_q))
+axis(2,at=at,labels=labels,pos=0.25,las=1,
+  cex.axis=0.7)
+segments(x0=0.25,y0=-0.5,x1=0.25,y1=0.5,lend=1)
+segments(x0=rep(0.5,100),x1=rep(0.5,100),
+  y0=seq(-0.5,0.49,by=0.01),y1=seq(-0.49,0.5,by=0.01),
+  col=hcl.colors(n=100),lwd=8,lend=1)
+text(x=-0.8,y=0,
+  "discrete character transition rate (q)",srt=90)
+
+#################
+```
+
+Having simulated our data in this way, we proceeded to fit our discrete-trait-dependent multi-rate Brownian motion model using the discrete approximation of @Boucher2016 and this article. Parameter estimates for $\sigma_{a}^2$ and $\sigma_{b}^2$ compared to their generating values are given in Figures \@ref(fig:fig12)a and \@ref(fig:fig12)b. In general, we found that this procedure resulted in unbiased and reasonably accurate estimates of both evolutionary rates in the model, $\sigma_{a}^2$ and $\sigma_{b}^2$ (Figures \@ref(fig:fig12)a, \@ref(fig:fig12)b).
+
+```{r, echo=FALSE, eval=FALSE}
+cor(q,est_q)
+cor(q,mk_q)
+```
+
+We also elected to assess estimation of the rate of transition between discrete character levels in the fitted model, $q_{ab} = q_{ba}$. We found that estimation in the discrete state dependent model was unbiased (Figure \@ref(fig:fig13)a). When we compared joint estimation of $q_{ab} = q_{ba}$ to estimation using a standard M*k* model (Figure \@ref(fig:fig13)b), we also found that the former was slightly more accurate than the latter. In particular, across our 40 simulations, the correlation between estimated and generating values of $q_{ab} = q_{ba}$ was $r = 0.81$ using joint estimation via the discretized diffusion approximation, while $r = 0.74$ when $q_{ab} = q_{ba}$ estimates were obtained by fitting a standard M*k* model (Figures \@ref(fig:fig13)a, \@ref(fig:fig13)b).
+
+```{r, echo=FALSE, eval=FALSE}
+smaps<-lapply(mk_fits,simmap)
+
+bm_sig2<-matrix(NA,nrow=nsim,ncol=2,
+  dimnames=list(1:nsim,c("a","b")))
+
+ncores<-min(nsim,detectCores()-2)
+mc<-makeCluster(ncores,type="PSOCK")
+registerDoParallel(cl=mc)
+
+ss_fits<-foreach(i=1:length(trees))%dopar%{
+  lapply(smaps[[i]],phytools::brownie.lite,
+    x=x[[i]])
+}
+
+stopCluster(cl=mc)
+
+for(i in 1:nsim){
+  bm_sig2[i,]<-rowMeans(sapply(ss_fits[[i]],
+    function(x) x$sig2.multiple[c("a","b")]))
+}
+
+save(nsim,q,smaps,ss_fits,bm_sig2,file="fig13.rda")
+```
+```{r fig13, echo=FALSE, fig.width=9, fig.height=7.5, fig.cap="Parameter estimation for joint vs. separate modeling of discrete and continuous character evolution, under a generating scenario of discrete state dependent multi-rate Brownian motion evolution of the continuous trait. a) Generating vs. estimated values for the transition rates between discrete character levels \\textit{a} and \\textit{b} of the discrete trait, $q_{ab} = q_{ba}$, obtained from the joint model. b) Generating vs. estimated $q_{ab} = q_{ba}$ obtained from a standard M\\textit{k} model. In these simulations joint modeling was slightly more accurate ($r = 0.81$ compared to $r = 0.74$). c) Generating vs. estimated $\\sigma_{b}^2/\\sigma_{a}^2$ from the joint model. d) Generating vs. estimated $\\sigma_{b}^2/\\sigma_{a}^2$ for a two-step procedure, in which 100 stochastic character maps of the discrete character were first obtained, and then a state-dependent continuous trait evolution model was fit to each one and then averaged. Separate modeling of discrete and continuous trait evolution can result in a substantive downward bias in $\\sigma_{b}^2/\\sigma_{a}^2$, as previously shown in Revell (2013). The color gradient of points corresponds to the generating transition rate between discrete character states, $q_{ab} = q_{ba}$, with lighter colors matching higher generating transition rates, as indicated in the right figure legend. Note that lighter points tend to correspond with greater downward bias in $\\sigma_{b}^2/\\sigma_{a}^2$ in panel (d), while no such trend is apparent under joint estimation (c). Model parameter estimates were obtained using the \\textit{phytools} R package (Revell 2024). See main text for more details.", fig.align="center", out.width = "90%"}
+## Figure 14
+load("fig12.rda")
+load("fig13.rda")
+
+col<-hcl.colors(n=100)
+ln_q<-c(log(q),log(1),log(10))
+col<-col[round((ln_q-min(ln_q))/diff(range(ln_q))*99)+1]
+col<-col[-(length(col)-c(0,1))]
+
+sig2_gen<-t(sapply(sig2,function(x) x))
+sig2_est<-t(sapply(fits_mbm,function(x) x$sigsq))
+layout(mat=matrix(c(1,2,5,3,4,5),2,3,byrow=TRUE),heights=c(3.5,3.5),
+  widths=c(3.5,3.5,0.75))
+par(mar=c(5.1,5.1,3.1,1.1))
+
+est_q<-sapply(fits_mbm,function(x) x$rates)
+mk_q<-sapply(mk_fits,function(x) x$rates)
+xylim<-range(c(1,20,est_q,mk_q))
+plot(q,est_q,log="xy",xlim=xylim,ylim=xylim,
+  xlab="true value of q",
+  ylab="fitmultiBM estimate of q",pch=16,col=col,
+  cex=1.6,las=1,cex.axis=0.8,bty="n")
+grid()
+lines(xylim,xylim)
+mtext("a)",line=1,adj=0)
+plot(q,mk_q,log="xy",xlim=xylim,ylim=xylim,
+  xlab="true value of q",
+  ylab="fitMk estimate of q",pch=16,col=col,
+  cex=1.6,las=1,cex.axis=0.8,bty="n")
+grid()
+lines(xylim,xylim)
+mtext("b)",line=1,adj=0)
+
+est_sigsq<-t(sapply(fits_mbm,function(x) x$sigsq))
+xylim<-range(c(1,
+  sig2_gen[,2]/sig2_gen[,1],
+  est_sigsq[,2]/est_sigsq[,1],
+  bm_sig2[,2]/bm_sig2[,1]))
+plot(sig2_gen[,2]/sig2_gen[,1],
+  est_sigsq[,2]/est_sigsq[,1],
+  log="xy",xlim=xylim,ylim=xylim,
+  xlab=expression(paste("generating ",
+    sigma[b]^2/sigma[a]^2)),
+  ylab=expression(paste("fitmultiBM estimated ",
+    sigma[b]^2/sigma[a]^2)),
+  pch=16,col=col,cex=1.6,las=1,
+  cex.axis=0.8,bty="n")
+grid()
+lines(xylim,xylim)
+mtext("c)",line=1,adj=0)
+plot(sig2_gen[,2]/sig2_gen[,1],
+  bm_sig2[,2]/bm_sig2[,1],
+  log="xy",xlim=xylim,ylim=xylim,
+  xlab=expression(paste("generating ",
+    sigma[b]^2/sigma[a]^2)),
+  ylab=expression(paste("brownie.lite estimated ",
+    sigma[b]^2/sigma[a]^2)),
+  pch=16,col=col,cex=1.6,las=1,
+  cex.axis=0.8,bty="n")
+grid()
+lines(xylim,xylim)
+mtext("d)",line=1,adj=0)
+
+par(mar=c(0,0,0,0))
+plot(NA,xlim=c(-1,1),ylim=c(-0.75,0.75),axes=FALSE,bty="n")
+labels<-c(1,2,5,10)
+at<--0.5+(log(labels)-min(ln_q))/(max(ln_q)-min(ln_q))
+axis(2,at=at,labels=labels,pos=0.25,las=1,
+  cex.axis=0.7)
+segments(x0=0.25,y0=-0.5,x1=0.25,y1=0.5,lend=1)
+segments(x0=rep(0.5,100),x1=rep(0.5,100),
+  y0=seq(-0.5,0.49,by=0.01),y1=seq(-0.49,0.5,by=0.01),
+  col=hcl.colors(n=100),lwd=8,lend=1)
+text(x=-0.8,y=0,
+  "discrete character transition rate (q)",srt=90)
+```
+
+In addition to this analysis, we also elected to compare estimation of $\sigma_{a}^2$ and $\sigma_{b}^2$ between jointly modeling discrete and continuous trait evolution, and the traditional two-step procedure of first undertaking stochastic character mapping following @Huelsenbeck2003, fitting a state-dependent rate heterogeneous trait evolution model to each stochastic character map using the model of @OMeara2006, and then averaging across stochastic maps [@Revell2022-book]. Rather than directly comparing parameter estimates themselves, we compared the correlation of the ratio of $\sigma_{b}^2/\sigma_{a}^2$ between generating values and their estimates via these two contrasting methods [@Revell2013b]. The results from this analysis are shown in Figures \@ref(fig:fig13)c and \@ref(fig:fig13)d. In general, we found that $\sigma_{b}^2/\sigma_{a}^2$ was nearly unbiased in our joint model fit using the discretized diffusion approximation across a range of generating $\sigma_{b}^2/\sigma_{a}^2$ varying from $<3$ to almost $40$ (Figure \@ref(fig:fig13)c). By contrast, estimated $\sigma_{b}^2/\sigma_{a}^2$ was strongly *downwardly* biased when obtained using the traditional two-step procedure (Figure \@ref(fig:fig13)d), particularly for higher transition rates of the discrete character, $q_{ab} = q_{ba}$. This reiterates the general finding of @Revell2013b.
+
+## A continuous-character-dependent discrete trait evolution model
+
+In addition to a model in which the state of a discrete character influences the stochastic diffusion of our continuous trait, which we saw in the previous section, the discrete approximation also permits us to quite easily imagine and fit the inverse model where the state of a continuous character influences the transition rate of a discrete trait. A biological scenario in which we might hypothesize that this model could be a good explanation for our data might include one where the rate of transition to a particular trait, like viviparity or live-birth in reptiles, is influenced by a continuously-valued environmental factor, such as temperature [e.g., @Shine1983; @LambertWiens2013; @PyronBurbrink2014]. Lots of other conceivable hypotheses of discrete phenotypic trait evolution could imply a similar relation. 
+
+Figures \@ref(fig:fig14)c and \@ref(fig:fig14)d illustrate the general structure of this process in which we've supposed a sigmoidal relationship between the value of our continuous trait and the rates of substitution between the two levels of a continuous character dependent discrete trait, $a$ and $b$. This is an arbitrary decision, and our general approach should (in principle) work for any functional form for the relationship between our continuous character and the transition rates of the discrete trait. The sigmoid form is convenient because (depending on its parameterization) it can be designed to be positive everywhere and includes continuous character independence (i.e., a "flat" curve) as a special case. Nonetheless, it would be straightforward to adapt our implementation of this method to other functional forms. As far as we know, and like the semi-threshold model discussed in a previous section, this model is novel to the present article [but see @IvesGarland2010 for a statistical approach designed to investigate a similar underlying biological hypothesis].
+
+In the scenario illustrated by the figure, the "forward" transition rate of our discrete character ($q_{ab}$) is high for low values of our continuous trait and low for higher values, while the converse is true with respect to the "backward" transition rate from $b$ to $a$, $q_{ba}$ (Figures \@ref(fig:fig14)c, \@ref(fig:fig14)d). Data for a continuous character and discrete trait simulated on a stochastic phylogeny with 400 tips under these conditions is illustrated by Figures \@ref(fig:fig14)a and \@ref(fig:fig14)b, respectively. In the figure, we see that the evolutionary process has predictably resulted in an association between relatively high values of our continuous character (Figure \@ref(fig:fig14)a) and condition $b$ of the discrete trait (Figure \@ref(fig:fig14)b), as well as between relatively low values of the continuous character (Figure \@ref(fig:fig14)a) and condition $a$ of the discrete trait (Figure \@ref(fig:fig14)b). This is one scenario of continuous character trait dependent discrete character evolution; however, our model would also be appropriate for conditions in which (for instance) one extreme of the continuous trait distribution was associated with higher backward and forward rates of the discrete character, and the other with low discrete trait rates. Though this evolutionary process unambiguously corresponds to continuous-character-dependent rate-varying discrete trait evolution, it would not tend to result in the same predictable character association shown by Figures \@ref(fig:fig14)a and \@ref(fig:fig14)b.
+
+```{r, echo=FALSE, eval=FALSE}
+rm(list=ls())
+set.seed(99)
+## number of taxa in my tree
+N<-400
+tree<-pbtree(n=N,scale=10)
+## number of steps in simulation
+nn<-400
+## this creates a tree with many singleton
+## nodes
+h<-max(nodeHeights(tree))
+tt<-map.to.singleton(
+  make.era.map(tree,
+    limits=seq(0,h-h/nn,length.out=nn))
+)
+## simulate Brownian evolution
+y<-fastBM(tt,internal=TRUE,sig2=0.25)
+## re-center to zero
+y<-y-mean(y)
+## compute the trait mean on each edge
+edge_y<-rowMeans(
+  matrix(y[tt$edge],nrow(tt$edge),
+    ncol(tt$edge)))
+## here's our sigmoid functions
+q01<-2+(0.01-2)/(1+exp(-2*(edge_y-0.1)))
+q10<-0.01+(2-0.01)/(1+exp(-2*(edge_y+0.1)))
+
+x<-vector(length=Ntip(tt)+Nnode(tt))
+x[Ntip(tt)+1]<-sample(1:2,1)
+for(i in 1:nrow(tt$edge)){
+  Q<-matrix(
+    c(-q01[i],q01[i],q10[i],-q10[i]),2,2,
+    byrow=TRUE)
+  P<-expm::expm(Q*tt$edge.length[i])
+  x[tt$edge[i,2]]<-sample(1:2,1,
+    prob=P[x[tt$edge[i,1]],])
+}
+save(edge_y, h, i, N, nn, P, Q, q01, q10, tree, tt, x, y,
+  file="fig14.rda")
+```
+```{r, echo=FALSE}
+load("fig14.rda")
+## continuous character
+y<-y[1:Ntip(tree)]
+## discrete trait
+x<-setNames(letters[1:2][x[1:Ntip(tt)]],
+  tt$tip.label)
+rm(list=setdiff(ls(),c("tree","x","y")))
+```
+```{r, echo=FALSE, eval=FALSE}
+fitcontMk_model<-fitcontMk(tree,x,y,parallel=TRUE,
+  ncores=10,levs=100,maxit=5000)
+fitcontMk_model
+save(fitcontMk_model,file="fig16.rda")
+```
+```{r fig14, echo=FALSE, fig.width=8, fig.height=8, fig.cap="Illustration of the evolutionary process for a binary discrete trait whose rate of evolution depends on the value of a continuous trait. a) Evolutionary history of a continuous trait evolving by Brownian motion on the tree. b) Evolutionary history of a binary discrete character with two levels, $a$ and $b$, whose rates of transition between states depend (according to different functional forms in both directions) on the value of the continuous trait of panel (a). c) Generating (blue line) and estimated (black line) transition rate from discrete trait level $a$ to $b$, $q_{ab}$, as a function of the continuous character of panel (a). d) Generating (blue line) and estimated (black line) transition rate from trait level $b$ to $a$, $q_{ba}$, as a function of the continuous character value.", fig.align="center", out.width = "80%"}
+load("fig14.rda")
+## visualize them
+layout(matrix(c(1,2,3,4),2,2,byrow=TRUE))
+par(mar=c(1.1,4.1,3.1,1.1))
+COLS<-hcl.colors(n=100)
+cols<-COLS[round((edge_y-min(edge_y))/
+    diff(range(edge_y))*99)+1]
+plot(tt,edge.color=cols,edge.width=1,
+  show.tip.label=FALSE,y.lim=c(-0.1*N,N))
+mtext("a)",line=1,adj=0)
+add.color.bar(0.75*max(nodeHeights(tree)),
+  cols=COLS,title="continuous trait",
+  lims=round(range(y),2),digits=2,
+  prompt=FALSE,outline=FALSE,
+  x=0.125*max(nodeHeights(tree)),y=-0.1*N,
+  subtitle="",fsize=0.8)
+COLS<-hcl.colors(n=2)
+cols=COLS[x[tt$edge[,2]]]
+par(mar=c(1.1,4.1,3.1,1.1),lend=1)
+plot(tt,edge.color=cols,edge.width=1,
+  show.tip.label=FALSE,direction="leftwards",
+  y.lim=c(-0.1*N,N))
+mtext("b)",line=1,adj=0)
+legend(x=0.35*max(nodeHeights(tree)),y=-0.03*N,
+  c("a","b"),lwd=4,col=COLS,horiz=TRUE,bty="n")
+load("fig16.rda")
+xx<-seq(-max(abs(y)),max(abs(y)),length.out=100)
+q01<-2+(0.01-2)/(1+exp(-2*(xx-0.1)))
+q10<-0.01+(2-0.01)/(1+exp(-2*(xx+0.1)))
+par(lend=1)
+YLIM<-c(0,max(c(q01,fitcontMk_model$q01,
+  q10,fitcontMk_model$q10)))
+YLIM<-c(0,2.6)
+YLAB<-list(
+  expression("transition rate (" * a %->% b * ")"),
+  expression("transition rate (" * b %->% a * ")"))
+obj<-plot(fitcontMk_model,add=TRUE,
+  xlim=c(-max(abs(y)),max(abs(y))),ylim=YLIM,
+  mar=c(5.1,4.1,3.1,1.1),ylab=YLAB)
+par(mfg=obj$mfg[[1]])
+par(usr=obj$usr[[1]])
+lines(xx,q01,col=make.transparent("blue",0.5),lwd=5)
+legend("topleft",legend=c("estimated","generating"),cex=0.7,
+  lwd=c(1,5),col=c("black",make.transparent("blue",0.5)))
+mtext("c)",line=1,adj=0)
+par(mfg=obj$mfg[[2]])
+par(usr=obj$usr[[2]])
+lines(xx,q10,col=make.transparent("blue",0.5),lwd=5)
+legend("topleft",legend=c("estimated","generating"),cex=0.7,
+  lwd=c(1,5),col=c("black",make.transparent("blue",0.5)))
+mtext("d)",line=1,adj=0)
+```
+
+To fit this model to data using the discretized diffusion approximation, we use a design matrix of our discretized space that is structurally similar to that of Figure \@ref(fig:fig11), but wherein the transition rates, $q_{ab}$ and $q_{ba}$, are allowed to vary as a continuous function of our quantitative trait, rather than assumed to take a constant value. As previously noted, in our implementation we suppose a sigmoidal functional form for this relationship, but there's no inherent necessity that it take this specific form. Additionally, and unlike the model design matrix of Figure \@ref(fig:fig11), here we assume a constant $\sigma^2$ for the continuous trait. This design matrix is illustrated in Figure \@ref(fig:fig15).
+
+```{r fig15, echo=FALSE, fig.width=8, fig.height=6, fig.cap="Illustrative figure showing the design-matrix of continuous-character-dependent multi-rate discrete character evolution model for the discrete diffusion approximation. Here a specific sigmoidal form is being used to match the generating conditions of Figure 14, though in practice this form is precisely what would be estimated from the data. For visualization purposes only, the number of bins for discretization has been set to 40. In practice a much larger number would be used to obtain accurate parameter estimation and model selection. See main text for more details.", fig.align="center", out.width = "70%"}
+## set number of levels for discretization
+levs<-40
+xx<-seq(-max(abs(y)),max(abs(y)),length.out=levs)
+q01<-2+(0.01-2)/(1+exp(-2*(xx-0.1)))
+q10<-0.01+(2-0.01)/(1+exp(-2*(xx+0.1)))
+cols_q01<-round((q01-min(q01))/diff(range(q01))*99+1)
+cols_q10<-round((q10-min(q10))/diff(range(q10))*99+1)
+model<-matrix(0,ncol=2*levs,nrow=2*levs)
+for(i in 1:(levs-1)){
+  model[i,i+1]<-101
+  model[i+1,i]<-101
+  model[i+levs,i+1+levs]<-101
+  model[i+1+levs,i+levs]<-101
+}
+for(i in 1:levs){
+  model[i,i+levs]<-cols_q01[i]
+  model[i+levs,i]<-cols_q10[i]
+}
+COLS<-c("white",hcl.colors(n=100),"grey")
+par(mar=c(2.6,2.6,2.6,12.1))
+plot(NA,xlim=c(0,ncol(model)+1),ylim=c(nrow(model),0),
+  bty="n",axes=FALSE,xlab="",ylab="",asp=1)
+for(i in 1:nrow(model)){
+  for(j in 1:ncol(model)){
+    polygon(x=c(-1,0,0,-1)+j,y=c(-1,-1,0,0)+i,
+      col=COLS[model[j,i]+1],border="transparent")
+  }
+}
+x_val<-c(xx[1],mean(xx),xx[levs])
+axis(side=1,at=seq(0.5,levs-0.5,length.out=3),
+  labels=rep("",3))
+text(x=seq(0.5,levs-0.5,length.out=3),
+  y=par()$usr[3]+2,labels=round(x_val,1),
+  srt=45,adj=1,xpd=TRUE,cex=0.6)
+axis(side=1,at=seq(0.5,levs-0.5,length.out=3)+levs,
+  labels=rep("",3))
+text(x=seq(0.5,levs-0.5,length.out=3)+levs,
+  y=par()$usr[3]+2,labels=round(x_val,1),
+  srt=-45,adj=0,xpd=TRUE,cex=0.6)
+axis(side=2,at=seq(0.5,levs-0.5,length.out=3),
+  labels=rep("",3))
+text(x=par()$usr[1]-2,
+  y=seq(0.5,levs-0.5,length.out=3),
+  labels=round(x_val,1),
+  srt=-45,adj=1,xpd=TRUE,cex=0.6)
+axis(side=2, at=seq(0.5, levs-0.5, 
+  length.out=3)+levs, labels=rep("",3))
+text(x=par()$usr[1]-2,
+  y=seq(0.5, levs-0.5, length.out=3)+levs,
+  labels=round(x_val,1),
+  srt=45, adj=1, xpd=TRUE, cex=0.6)
+axis(side=3,at=seq(0.5,levs-0.5,length.out=2),tcl=0.5,
+  labels=rep("",2))
+axis(side=3,at=levs/2,tcl=-0.5,labels="a")
+axis(side=3,at=seq(0.5,levs-0.5,length.out=2)+levs,tcl=0.5,
+  labels=rep("",2))
+axis(side=3,at=levs/2+levs,tcl=-0.5,labels="b")
+axis(side=4,at=seq(0.5,levs-0.5,length.out=2),tcl=0.5,
+  labels=rep("",2))
+axis(side=4,at=levs/2,tcl=-0.5,labels="a",las=1)
+axis(side=4,at=seq(0.5,levs-0.5,length.out=2)+levs,tcl=0.5,
+  labels=rep("",2))
+axis(side=4,at=levs/2+levs,tcl=-0.5,labels="b",las=1)
+obj<-legend(x=1.08*ncol(model),y=0,
+  legend=expression(q_c=sigma^2/(2*delta^2)),xpd=NA,
+  pch=15,col="grey",cex=0.8,pt.cex=1.5,
+  bty="n")
+par(xpd=NA)
+add.color.bar(0.5*levs,cols=hcl.colors(n=60),prompt=FALSE,x=2.2*levs,y=0.25*levs,
+  title=expression(paste(q["ab"]," or ",q["ba"])),lims=NA,subtitle="",
+  fsize=0.8,outline=FALSE)
+```
+
+Unfortunately, for computational reasons beyond the scope of the present study (but that once again pertain to large matrix exponentiation and that we hope to overcome via future research), it was not feasible for us to undertake even a modestly-sized simulation experiment to assess estimation under this model. We have nonetheless provided the maximum likelihood fitted model for the data and tree of Figures \@ref(fig:fig14)a and \@ref(fig:fig14)b in the solid black lines of Figures \@ref(fig:fig14)c and \@ref(fig:fig14)d. Note that all parameters of the backward and forward transition rate functional forms are being estimated from the data, the lower and upper asymptotes, the mid- or inflection point, and the curve steepness (Figure \@ref(fig:fig14)). At least in this single simulated example, the similarity to the generating conditions is notable (Figures \@ref(fig:fig14)c, \@ref(fig:fig14)d). Readers interested in employing this method for their own research are encouraged to download our simulation and analysis code (which is publicly available, see below) and undertake their own study of parameter estimation reliability for this model.
+
+## A multi-trend directional model
+
+As a final illustration of the power of our discretized diffusion approximation, we've chosen to develop another new model: a discrete-character-dependent multi-trend (i.e., multi-$\mu$), multi-rate (i.e., multi-$\sigma^2$), trended or directional Brownian motion model. This is a discrete-character-dependent stochastic diffusion model, but where diffusion has a linear trend ($\mu$) and in which both the diffusion rate ($\sigma^2$) and the trend ($\mu$) vary as a function of our discrete trait. This evolutionary scenario is illustrated via the simulation of Figure \@ref(fig:fig16). Note that we intentionally simulated a non-ultrametric tree because the trend model parameter $\mu$ and $x_0$ are mutually non-identifiable (that is, an $\infty$ number of $\mu$ and $x_0$ pairs result in the same likelihood) for ultrametric phylogenies [e.g., @HoAne2014; @Gill2017].
+
+As far as we know, this specific model in phylogenetic comparative methods is novel to the present article; however, @Gill2017 provide a relaxed random walk model in which they also propose to jointly model continuous trait and nucleotide sequence evolution. [This is related to what we have done here, but assumes that the discrete characters and continuous trait evolution are conditionally independent, @Gill2017.] Among many possible applications, a biological scenario for this model might be one in which trended geographic diffusion of a host-switching wildlife virus is expected [e.g., @Gill2017], but where the trend direction switches as a function of the viral host, which in turn evolves via a continuous-time Markov chain.
+
+```{r fig16, echo=FALSE, fig.width=8, fig.height=5, fig.cap="Illustration of the scenario of discrete-character-dependent multi-trend, multi-rate trended Brownian motion evolution. a) Simulated discrete character evolution of a binary character with two levels, $a$ and $b$, where $q_{ab} = q_{ba} = 0.5$. b) Continuous trait evolution under our model for $\\sigma_a^2 = 0.5$, $\\sigma_b^2 = 0.9$, $\\mu_a = 1.0$, and $\\mu_b = -0.7$. Under this scenario, the linear trend of our continuous trait is positive (i.e., increasing) when the discrete character is in condition $a$ and negative (decreasing) when in condition $b$.", fig.align="center", out.width = "80%"}
+set.seed(99)
+## simulate a tree
+tree<-rtree(n=200)
+h<-max(nodeHeights(tree))
+tree$edge.length/h*10->tree$edge.length
+simt<-map.to.singleton(make.era.map(tree,
+    seq(0,max(nodeHeights(tree)),length.out=201)[1:200]))
+## Q matrix for simulating discrete trait
+Q<-matrix(c(-0.5,0.5,0.5,-0.5),2,2,
+  dimnames=list(letters[1:2],letters[1:2]))
+## simulated discrete trait history
+simt<-sim.history(simt,Q,message=FALSE)
+y<-as.factor(getStates(simt,"tips"))
+par(mfrow=c(1,2),las=1,cex.axis=0.7,lend=1)
+cols<-setNames(hcl.colors(n=2),letters[1:2])
+plot(simt,colors=cols,ftype="off",
+  mar=c(5.1,4.1,3.1,1.1),lwd=1)
+axis(1,at=seq(0,10,by=2))
+title(xlab="time")
+legend("topright",c("a","b"),lwd=4,col=hcl.colors(n=2),
+  bty="n",cex=0.8)
+mtext("a)",line=1,adj=0)
+sig2<-setNames(c(0.5,0.9),letters[1:2])
+mu<-setNames(c(1.0,-0.7),letters[1:2])
+par(mar=c(5.1,4.1,3.1,1.1),cex.axis=0.7)
+x<-sim.multiTrend(simt,sig2=sig2,mu=mu,plot=TRUE,
+  col=hcl.colors(n=2),lwd=1)
+legend("topleft",
+  c(expression(paste(sigma^2," = 0.5;  ",
+    mu," = 1.0")),
+    expression(paste(sigma^2," = 0.9;  ",
+      mu," = -0.7"))),
+  col=hcl.colors(n=2),lwd=4,cex=0.8,
+  bty="n")
+mtext("b)",line=1,adj=0)
+```
+
+To fit this model to data using the discretized diffusion approximation we take the same approach as for the preceding two models; however, here our diffusion process is asymmetric in the upward and downward directions. That is to say, $q_+ = \sigma^2/(2\delta^2)+\mu/(2\delta)$ and $q_- = \sigma^2/(2\delta^2)-\mu/(2\delta)$ (where $q_+$ and $q_-$ refer to the upward and downward transition rates between adjacent bins of our discretized continuous trait space for a given set of $\sigma^2$ and $\mu$ values) for diffusion rate $\sigma^2$ and linear trend parameter $\mu$, where $\delta$ is as previously defined [@Risken1996; @KushnerDupuis2001]. (Since both $q_+$ and $q_-$ must be $\ge 0$, fitting this model using the discretized diffusion approximation also requires that we select $\delta$ such that $|\mu| \leq \sigma^2/\delta$.)
+
+To illustrate this model, we undertook a limited simulation study. We simulated twenty 200-taxon non-ultrametric trees of total length 10.0, and a binary discrete trait with $q_{ab} = q_{ba} = 0.5$, as in Figure \@ref(fig:fig16). We then sampled $\mu_a$ and $\mu_b$ randomly on $[0.2,1]$ and $[-1,-0.2]$, respectively. This way the trend, $\mu$, was always positive for discrete character level $a$ and negative for $b$. We randomly sampled $\sigma_a^2$ and $\sigma_b^2$ independently on $[0.3,1]$. For each tree and dataset we fit the multi-$\mu$, multi-$\sigma^2$ model using the discretized diffusion approximation.
+
+```{r, echo=FALSE, eval=FALSE}
+set.seed(99)
+nsim<-20
+levs<-100
+mu_a<-round(runif(n=nsim,min=0.2,max=1),2)
+mu_b<-round(runif(n=nsim,min=-1,max=-0.2),2)
+sig2_a<-round(runif(n=nsim,min=0.3,max=1),2)
+sig2_b<-round(runif(n=nsim,min=0.3,max=1),2)
+fit_trend<-list()
+for(i in 1:nsim){
+  cat(paste("\nStarting iteration ",i,"....\n\n",sep=""))
+  ## simulate a tree
+  tree<-rtree(n=200)
+  h<-max(nodeHeights(tree))
+  tree$edge.length/h*10->tree$edge.length
+  simt<-map.to.singleton(make.era.map(tree,
+    seq(0,max(nodeHeights(tree)),length.out=201)[1:200]))
+  ## Q matrix for simulating discrete trait
+  Q<-matrix(c(-0.5,0.5,0.5,-0.5),2,2,
+    dimnames=list(letters[1:2],letters[1:2]))
+  ## simulated discrete trait history
+  simt<-sim.history(simt,Q,message=FALSE)
+  y<-as.factor(getStates(simt,"tips"))
+  par(mfrow=c(1,2),las=1)
+  cols<-setNames(hcl.colors(n=2),letters[1:2])
+  plot(simt,colors=cols,ftype="off",
+    mar=c(5.1,4.1,3.1,1.1))
+  axis(1,at=seq(0,10,by=2))
+  title(xlab="time")
+  legend("topright",c("a","b"),lwd=2,col=hcl.colors(n=2),
+    bty="n")
+  mtext("a)",line=1,adj=0)
+  sig2<-setNames(c(sig2_a[i],sig2_b[i]),letters[1:2])
+  mu<-setNames(c(mu_a[i],mu_b[i]),letters[1:2])
+  par(mar=c(5.1,4.1,3.1,1.1))
+  x<-sim.multiTrend(simt,sig2=sig2,mu=mu,plot=TRUE,
+    col=hcl.colors(n=2),lwd=2)
+  legend("topleft",
+    legend = c(
+      bquote(sigma^2 == .(sig2_a[i]) * ";" ~~ mu == .(mu_a[i])),
+      bquote(sigma^2 == .(sig2_b[i]) * ";" ~~ mu == .(mu_b[i]))
+    ),
+    col = hcl.colors(n = 2),
+    lwd = 2,
+    cex = 0.8,
+    bty = "n"
+  )
+  mtext("b)",line=1,adj=0)
+  fit_trend[[i]]<-fitmultiTrend(tree,x,y,parallel=TRUE,
+    levs=levs,plot_model=FALSE)
+  print(fit_trend[[i]])
+  cat(paste("\nDone iteration ",i,".\n\n",sep=""))
+save(mu_a,mu_b,sig2_a,sig2_b,fit_trend,file="fig17.rda")
+}
+```
+```{r fig17, echo=FALSE, fig.width=8, fig.height=7.5, fig.cap="Parameter estimation under discrete character dependent multi-trend trended Brownian motion evolution. The discrete character was simulated with two levels, $a$ and $b$, for a constant transition rate between levels, $q_{ab} = q_{ba} = 0.5$. a) Generating vs. estimated $\\sigma_a^2$ under the model. b) Generating vs. estimated $\\sigma_b^2$. c) Generating vs. estimated $\\mu_a$, the linear trend parameter of the model when the discrete trait is in condition $a$. d) Generating vs. estimated $\\mu_b$. Model parameter estimates were obtained using the \\textit{phytools} R package (Revell 2024). See main text for additional details.", fig.align="center", out.width = "80%"}
+load("fig17.rda")
+est.sig2_a<-sapply(fit_trend,function(x) x$sigsq[1])
+est.sig2_b<-sapply(fit_trend,function(x) x$sigsq[2])
+est.mu_a<-sapply(fit_trend,function(x) x$mu[1])
+est.mu_b<-sapply(fit_trend,function(x) x$mu[2])
+par(mar=c(5.1,5.1,3.1,1.1))
+layout(mat=matrix(c(1,2,3,4),2,2,byrow=TRUE),heights=c(3.5,3.5))
+xylim.sig2<-c(
+  min(c(sig2_a,est.sig2_a,sig2_b,est.sig2_b)),
+  max(c(sig2_a,est.sig2_a,sig2_b,est.sig2_b)))
+plot(NA,xlab=expression(paste("generating ",sigma[a]^2)),
+  ylab=expression(paste("estimated ",sigma[a]^2)),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.sig2,ylim=xylim.sig2)
+mtext("a)",line=1,adj=0)
+grid()
+points(sig2_a,est.sig2_a,
+  pch=16,col=cols[1],las=1,,cex=1.2)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.sig2,xylim.sig2)
+plot(NA,xlab=expression(paste("generating ",sigma[b]^2)),
+  ylab=expression(paste("estimated ",sigma[b]^2)),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.sig2,ylim=xylim.sig2)
+mtext("b)",line=1,adj=0)
+grid()
+points(sig2_b,est.sig2_b,
+  pch=16,col=cols[1],las=1,,cex=1.2)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.sig2,xylim.sig2)
+xylim.mu_a<-c(
+  min(c(mu_a,est.mu_a)),
+  max(c(mu_a,est.mu_a)))
+plot(NA,xlab=expression(paste("generating ",mu[a])),
+  ylab=expression(paste("estimated ",mu[a])),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.mu_a,ylim=xylim.mu_a)
+mtext("c)",line=1,adj=0)
+grid()
+points(mu_a,est.mu_a,
+  pch=16,col=cols[1],las=1,,cex=1.2)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.mu_a,xylim.mu_a)
+xylim.mu_b<-c(
+  min(c(mu_b,est.mu_b)),
+  max(c(mu_b,est.mu_b)))
+plot(NA,xlab=expression(paste("generating ",mu[b])),
+  ylab=expression(paste("estimated ",mu[b])),
+  bty="n",las=1,cex.axis=0.8,xlim=xylim.mu_b,ylim=xylim.mu_b)
+mtext("d)",line=1,adj=0)
+grid()
+points(mu_b,est.mu_b,
+  pch=16,col=cols[1],las=1,cex=1.2)
+legend("topleft","1:1 line",lwd=1,bty="n")
+lines(xylim.mu_b,xylim.mu_b)
+```
+
+In general, we found reliable estimation of the simulated discrete character dependent stochastic diffusion rates ($\sigma_a^2$ and $\sigma_b^2$) and linear trend parameters ($\mu_a$ and $\mu_b$) in this model (Figure \@ref(fig:fig17)), though many more simulations would be required to truly understand its properties.
+
+```{r, echo=FALSE, eval=FALSE}
+mk.q<-vector()
+for(i in 1:nsim){
+  tree<-fit_trend[[i]]$mk_fit$tree
+  Data<-fit_trend[[i]]$mk_fit$data
+  y<-vector()
+  for(j in 1:nrow(Data)){
+    y[j]<-colnames(Data)[which(Data[j,]==1)]
+  }
+  y<-sapply(strsplit(y,","),function(x) x[1])
+  names(y)<-rownames(Data)
+  mk.q[i]<-fitMk(tree,y,model="ER")$rates
+}
+
+est.q<-sapply(fit_trend,function(x) x$rates)
+est.q
+plot(est.q,mk.q)
+mean(est.q)
+mean(mk.q)
+sqrt(var(est.q))
+sqrt(var(mk.q))
+```
+
+We also checked parameter estimation for the rate of transition of the discrete trait in the model, $q_{ab} = q_{ba}$. We found no difference between $\hat{q}$ in our fitted trend models ($\bar{q} = 0.47$ compared to a constant true value of $q = 0.5$) and a standard M*k* model ($\bar{q} = 0.48$), although the former had a slightly lower variance across simulations than the latter ($\sigma = 0.076$ for joint estimation compared to $0.10$ for the standard M*k* model). Given the very small scope of simulations this result should be considered very preliminary; however, it comports with the finding of greater accuracy in the estimation of $q_{ab} = q_{ba}$ we reported for the discrete-character-dependent rate-varying Brownian model earlier in this article (Figure \@ref(fig:fig13)).
+
+# Software implementation and data availability
+
+All of the methods of this article are implemented in the R statistical computing software [@RTeam2025] package *phytools* [@Revell2012; @Revell2024]. All analyses of this article were conducted using *phytools*, *geiger* [@Pennell2014], and *ape* [@Paradis2019]. *phytools* and *geiger* also in turn depend on the core R phylogenetics packages *ape* [@Paradis2019] and *phangorn* [@Schliep2011]. *phytools*, *geiger*, *ape*, and *phangorn* are all publicly available through the Comprehensive R Archive Network, CRAN ([https://cran.r-project.org/](https://cran.r-project.org/)). All data and code of this article can be reviewed via a public GitHub repository ([https://github.com/liamrevell/Revell_etal.unlocking_pcms](https://github.com/liamrevell/Revell_etal.unlocking_pcms)).
+
+# Concluding thoughts
+
+A decade ago @Boucher2016 published an article that one of us (LR) has been consistently asserting since 2024 is "the most important phylogenetic comparative methods paper you probably haven't read." This is at least partly because LR had either not read, or read and not properly appreciated, this article at the time it was written nor for several years afterwards. Though certainly many others read the article, it's easy to argue that it was underappreciated by the field since it has been cited a mere 55 times since its publication. [For reference, this tally almost exactly matches the number of times an LR lab undergraduate-authored paper on lizard tail autotomy in the *Journal of Herpetology* from the same year has been cited as of the time of writing, @Tyler2016.]
+
+The @Boucher2016 article introduced a new model, bounded Brownian motion, and at the same time circumvented the intractability of the likelihood function for reasonably-sized trees by devising a clever procedure for approximating the likelihood using what we've referred to herein as the discretized diffusion approximation. In essence, this approach replaces the underlying diffusion process with a continuous-time Markov chain defined on a discretized trait space with transition rates between adjacent bins chosen so that the chain approximates the generator of the diffusion process. This sort of construction is closely-related to classical finite-difference approximations of diffusion widely-employed throughout the stochastic process literature [e.g., @KushnerDupuis2001; @Gardiner2009; @Pavliotis2014]. What was truly novel about @Boucher2016, then, was not the general mathematical idea, but its application to phylogenetic comparative models. As discussed in the Introduction, a subsequent contribution by some of the same authors, @Boucher2018, extended this latter innovation to a wider variety of continuous trait evolution models; however, in our opinion, this article is also underrecognized.
+
+In 2024, two of the other authors of the present article (MA and LH) invited the lead author (LR) to participate in a study they were working on (with author KM and others) on the topic of "circular" Brownian motion [@Martinet2026], also using the technique of @Boucher2016. At that time, it became apparent to LR that there might be a substantially larger number of other applications of this estimation procedure than those that had already been identified. This was the origin of the present article.
+
+Herein we've presented (as far as we can ascertain from the literature) at least three or four totally novel models for the phylogenetic comparative analysis of discrete and/or continuous trait evolution. Nonetheless, we also confidently assert that this barely scratches the surface of the broad range of potential uses of this powerful approach. 
+
+Some additional applications that we have not covered include a wide variety of so-called "hidden-rate" models [@Beaulieu2013; @Boyko2021]. In a hidden-rate model, we might study discrete character dependent continuous trait evolution, but where the discrete character trait is unobserved, thus allowing the continuous trait data to entirely dictate the phylogenetic position of shifts between rates or evolutionary regimes. Indeed, LR has already implemented precisely this model (in a few flavors) within his R package *phytools* [@Revell2024]. Similarly, it's straightforward to extend the same logic to our continuous character dependent rate varying discrete trait model, though, at the time of writing, this had not yet been implemented in software. As opposed to bounded evolution of @Boucher2016 or the semi-threshold model of the present article, we also might imagine evolutionary limits in which the bounds were absorbing or "sticky." This model, too, is straightforward to implement using the discretized diffusion approximation and is already available to both simulate and fit to data in *phytools* [@Revell2024]. We've focused exclusively on "gradual" continuous character models, but the discretized diffusion approximation would easily extend to process models with discontinuous jumps. For example, it would be very easy to imagine and implement in software a model of continuous character evolution but where a trait is "turned off" or lost in a single evolutionary event. 
+
+We believe that both what we've covered in this article and mentioned above could represent but the tip of a much larger iceberg's worth of evolutionary scenarios for which likelihood functions are intractable but where the discretized diffusion approximation may be suitable. As such, we fully expect to continue discovering new applications of this approach into the future.
+
+The famous @Maslow1966 law of the instrument states "if all you have is a hammer, everything looks like a nail" and is meant as a cautionary tale. The implication is that if you have but a single tool at your disposal, a cognitive distortion can arise in which many different problems will begin to look as if they can be remedied using this instrument. What we seem to have discovered in exploring the broad usefulness of the @Boucher2016 discretized diffusion approximation for the phylogenetic analysis of discrete and continuous trait data is a sort of inverse law of the instrument. If you look closely enough at many hypotheses and problems in phylogenetic comparative research that pertain to trait evolution, many do, in fact, turn out to be nails.
+
+# Acknowledgments
+
+This project was funded in part by a Tufts IRACDA Partner Faculty Research Award Program grant (NIH-NIGMS award K12GM133314, sub-awarded to LR) and by a Proposal Development Grant from the University of Massachusetts Boston (to LR and NH). We used ChatGPT (OpenAI) in grammatical and typographical proofreading, to check and improve technical clarity, and to assist in literature review; however, no portion of this article was written by AI and all content was reviewed and verified by the authors.
+
+# References
